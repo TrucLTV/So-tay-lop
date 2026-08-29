@@ -58,13 +58,10 @@
     border-radius:var(--radius-sm); font-size:0.84rem; font-weight:600; cursor:pointer;}
   .chip:hover{background:var(--surface-2);}
   .chip.selected{background:var(--accent-soft); border-color:var(--accent); color:var(--accent-strong);}
-  .scope-group{border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--surface-2); padding:10px 12px; margin-bottom:8px;}
-  .scope-group-title{display:flex; align-items:center; gap:8px; cursor:pointer; font-weight:700; font-size:0.88rem; margin:0;}
-  .scope-group-title input{width:auto; margin:0;}
-  .scope-item{display:flex; align-items:center; gap:8px; cursor:pointer; font-size:0.84rem; color:var(--ink-muted); padding:6px 0 0 26px; margin:0;}
-  .scope-item input{width:auto; margin:0;}
-  .scope-all-row{display:flex; align-items:center; gap:8px; cursor:pointer; font-weight:700; font-size:0.9rem; margin:0 0 10px;}
+  .scope-all-row{display:flex; align-items:center; gap:8px; cursor:pointer; font-weight:700; font-size:0.92rem; margin:0 0 10px;}
   .scope-all-row input{width:auto; margin:0;}
+  .scope-row{display:flex; align-items:center; gap:8px; cursor:pointer; font-weight:600; font-size:0.88rem; padding:8px 10px; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--surface-2); margin-bottom:6px;}
+  .scope-row input{width:auto; margin:0;}
   .msg{font-size:0.85rem; margin-top:8px;}
   .msg.err{color:var(--critical); font-weight:600;}
   .msg.ok{color:var(--good); font-weight:600;}
@@ -356,7 +353,17 @@
     showScreen("screenSubmit");
     document.getElementById("roleNameLabel").textContent = session.role.role_name;
     var scope = session.role.scope;
-    var allowed = (scope === "all" || !scope) ? MASTER_CATEGORIES : scope.split(",").map(function(s){return s.trim();}).filter(Boolean);
+    var allowed;
+    if(scope === "all" || !scope){
+      allowed = MASTER_CATEGORIES.slice();
+    } else {
+      var groupNames = scope.split(",").map(function(s){return s.trim();}).filter(Boolean);
+      allowed = [];
+      groupNames.forEach(function(gn){
+        var g = CATEGORY_GROUPS.find(function(x){return x.name===gn;});
+        if(g) allowed = allowed.concat(g.cats);
+      });
+    }
     if(allowed.indexOf("Khác") === -1) allowed.push("Khác");
     selectedCategory = null;
     document.getElementById("noteCategoryChips").innerHTML = allowed.map(function(c){
@@ -444,54 +451,33 @@
     ["roles","summary","account"].forEach(function(s){ document.getElementById("sub-"+s).style.display = (s===name)?"":"none"; });
   }
 
-  // ---- role scope checklist (grouped, in the add/edit form) ----
-  var rfSelectedScope = []; // [] with rfScopeAll true means 'all'
+  // ---- role scope checklist (main groups only; sub-loại nằm ở CATEGORY_GROUPS, không chọn lẻ ở đây) ----
+  var rfSelectedGroups = []; // group names; [] with rfScopeAll true means 'all'
   var rfScopeAll = true;
-  function isCatChecked(c){ return rfScopeAll || rfSelectedScope.indexOf(c) >= 0; }
   function renderScopeChips(){
     var html = '<label class="scope-all-row"><input type="checkbox" id="rfScopeAllChk"'+(rfScopeAll?" checked":"")+'><span>Tất cả loại</span></label>';
     html += CATEGORY_GROUPS.map(function(g){
-      var allChecked = g.cats.every(isCatChecked);
-      return '<div class="scope-group">' +
-        '<label class="scope-group-title"><input type="checkbox" class="scope-group-chk" data-group="'+esc(g.name)+'"'+(allChecked?" checked":"")+'><span>'+esc(g.name)+'</span></label>' +
-        g.cats.map(function(c){
-          return '<label class="scope-item"><input type="checkbox" class="scope-cat-chk" data-cat="'+esc(c)+'"'+(isCatChecked(c)?" checked":"")+'><span>'+esc(c)+'</span></label>';
-        }).join("") +
-        '</div>';
+      var checked = rfScopeAll || rfSelectedGroups.indexOf(g.name) >= 0;
+      return '<label class="scope-row"><input type="checkbox" class="scope-group-chk" data-group="'+esc(g.name)+'"'+(checked?" checked":"")+'><span>'+esc(g.name)+'</span></label>';
     }).join("");
     document.getElementById("rfScopeChips").innerHTML = html;
   }
   renderScopeChips();
-  function expandToExplicitList(){
-    if(rfScopeAll){ rfSelectedScope = MASTER_CATEGORIES.filter(function(c){return c!=="Khác";}).slice(); rfScopeAll = false; }
-  }
   document.getElementById("rfScopeChips").addEventListener("change", function(e){
     var t = e.target;
     if(t.id === "rfScopeAllChk"){
       rfScopeAll = t.checked;
-      rfSelectedScope = [];
+      rfSelectedGroups = [];
       renderScopeChips();
       return;
     }
     if(t.classList.contains("scope-group-chk")){
-      expandToExplicitList();
-      var group = CATEGORY_GROUPS.find(function(g){ return g.name === t.dataset.group; });
-      group.cats.forEach(function(c){
-        var idx = rfSelectedScope.indexOf(c);
-        if(t.checked && idx<0) rfSelectedScope.push(c);
-        if(!t.checked && idx>=0) rfSelectedScope.splice(idx,1);
-      });
-      if(rfSelectedScope.length===0) rfScopeAll = true;
-      renderScopeChips();
-      return;
-    }
-    if(t.classList.contains("scope-cat-chk")){
-      expandToExplicitList();
-      var cat = t.dataset.cat;
-      var idx = rfSelectedScope.indexOf(cat);
-      if(t.checked && idx<0) rfSelectedScope.push(cat);
-      if(!t.checked && idx>=0) rfSelectedScope.splice(idx,1);
-      if(rfSelectedScope.length===0) rfScopeAll = true;
+      if(rfScopeAll){ rfSelectedGroups = CATEGORY_GROUPS.map(function(g){return g.name;}); rfScopeAll = false; }
+      var name = t.dataset.group;
+      var idx = rfSelectedGroups.indexOf(name);
+      if(t.checked && idx<0) rfSelectedGroups.push(name);
+      if(!t.checked && idx>=0) rfSelectedGroups.splice(idx,1);
+      if(rfSelectedGroups.length===0) rfScopeAll = true;
       renderScopeChips();
     }
   });
@@ -503,7 +489,7 @@
     document.getElementById("rfName").value = "";
     document.getElementById("rfPassword").value = "";
     document.getElementById("rfActive").checked = true;
-    rfScopeAll = true; rfSelectedScope = [];
+    rfScopeAll = true; rfSelectedGroups = [];
     renderScopeChips();
     document.getElementById("btnCancelEditRole").style.display = "none";
     document.getElementById("roleFormMsg").textContent = "";
@@ -544,8 +530,8 @@
       document.getElementById("rfName").value = r.name;
       document.getElementById("rfPassword").value = r.password;
       document.getElementById("rfActive").checked = !!r.active;
-      if(r.scope === "all" || !r.scope){ rfScopeAll = true; rfSelectedScope = []; }
-      else { rfScopeAll = false; rfSelectedScope = r.scope.split(",").map(function(s){return s.trim();}).filter(Boolean); }
+      if(r.scope === "all" || !r.scope){ rfScopeAll = true; rfSelectedGroups = []; }
+      else { rfScopeAll = false; rfSelectedGroups = r.scope.split(",").map(function(s){return s.trim();}).filter(Boolean); }
       renderScopeChips();
       document.getElementById("btnCancelEditRole").style.display = "";
       window.scrollTo({top: document.getElementById("roleFormTitle").offsetTop, behavior:"smooth"});
@@ -567,7 +553,7 @@
     var name = document.getElementById("rfName").value.trim();
     var password = document.getElementById("rfPassword").value.trim();
     if(!name || !password){ msg.className="msg err"; msg.textContent="Vui lòng nhập tên và mật khẩu."; return; }
-    var scope = rfScopeAll ? "all" : rfSelectedScope.join(",");
+    var scope = rfScopeAll ? "all" : rfSelectedGroups.join(",");
     var active = document.getElementById("rfActive").checked;
     var btn = document.getElementById("btnSaveRole");
     btn.disabled = true;
