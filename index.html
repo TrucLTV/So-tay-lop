@@ -58,6 +58,13 @@
     border-radius:var(--radius-sm); font-size:0.84rem; font-weight:600; cursor:pointer;}
   .chip:hover{background:var(--surface-2);}
   .chip.selected{background:var(--accent-soft); border-color:var(--accent); color:var(--accent-strong);}
+  .scope-group{border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--surface-2); padding:10px 12px; margin-bottom:8px;}
+  .scope-group-title{display:flex; align-items:center; gap:8px; cursor:pointer; font-weight:700; font-size:0.88rem; margin:0;}
+  .scope-group-title input{width:auto; margin:0;}
+  .scope-item{display:flex; align-items:center; gap:8px; cursor:pointer; font-size:0.84rem; color:var(--ink-muted); padding:6px 0 0 26px; margin:0;}
+  .scope-item input{width:auto; margin:0;}
+  .scope-all-row{display:flex; align-items:center; gap:8px; cursor:pointer; font-weight:700; font-size:0.9rem; margin:0 0 10px;}
+  .scope-all-row input{width:auto; margin:0;}
   .msg{font-size:0.85rem; margin-top:8px;}
   .msg.err{color:var(--critical); font-weight:600;}
   .msg.ok{color:var(--good); font-weight:600;}
@@ -154,7 +161,7 @@
         <div class="field"><label>Tên vai trò</label><input type="text" id="rfName" placeholder="VD: Lớp trưởng"></div>
         <div class="field"><label>Mật khẩu</label><input type="text" id="rfPassword" placeholder="Mật khẩu cấp cho bạn này"></div>
         <label>Phạm vi được ghi</label>
-        <div class="chip-row" id="rfScopeChips"></div>
+        <div id="rfScopeChips" style="margin-bottom:12px;"></div>
         <div class="row" style="margin-bottom:10px;">
           <label style="display:flex; align-items:center; gap:6px; margin:0; cursor:pointer;">
             <input type="checkbox" id="rfActive" checked style="width:auto;"><span>Đang hoạt động</span>
@@ -234,6 +241,13 @@
     "Đánh nhau / bạo lực học đường",
     "Tuyên dương / việc tốt",
     "Khác"
+  ];
+
+  var CATEGORY_GROUPS = [
+    { name: "Học tập", cats: ["Không làm BTVN / chưa chuẩn bị bài"] },
+    { name: "Kỷ luật", cats: ["Nói chuyện riêng / mất trật tự","Nói leo / vô lễ với GV","Đánh nhau / bạo lực học đường","Dùng điện thoại trong giờ"] },
+    { name: "Phong trào", cats: ["Tuyên dương / việc tốt"] },
+    { name: "Chuyên cần / tác phong", cats: ["Đi trễ","Nghỉ không phép","Đồng phục / tác phong"] }
   ];
 
   var DEFAULT_STUDENTS = [
@@ -430,30 +444,56 @@
     ["roles","summary","account"].forEach(function(s){ document.getElementById("sub-"+s).style.display = (s===name)?"":"none"; });
   }
 
-  // ---- role scope chips (in the add/edit form) ----
+  // ---- role scope checklist (grouped, in the add/edit form) ----
   var rfSelectedScope = []; // [] with rfScopeAll true means 'all'
   var rfScopeAll = true;
+  function isCatChecked(c){ return rfScopeAll || rfSelectedScope.indexOf(c) >= 0; }
   function renderScopeChips(){
-    document.getElementById("rfScopeChips").innerHTML =
-      '<button type="button" class="chip'+(rfScopeAll?" selected":"")+'" data-scope="__all__">Tất cả loại</button>' +
-      MASTER_CATEGORIES.filter(function(c){return c!=="Khác";}).map(function(c){
-        var sel = !rfScopeAll && rfSelectedScope.indexOf(c)>=0;
-        return '<button type="button" class="chip'+(sel?" selected":"")+'" data-scope="'+esc(c)+'">'+esc(c)+'</button>';
-      }).join("");
+    var html = '<label class="scope-all-row"><input type="checkbox" id="rfScopeAllChk"'+(rfScopeAll?" checked":"")+'><span>Tất cả loại</span></label>';
+    html += CATEGORY_GROUPS.map(function(g){
+      var allChecked = g.cats.every(isCatChecked);
+      return '<div class="scope-group">' +
+        '<label class="scope-group-title"><input type="checkbox" class="scope-group-chk" data-group="'+esc(g.name)+'"'+(allChecked?" checked":"")+'><span>'+esc(g.name)+'</span></label>' +
+        g.cats.map(function(c){
+          return '<label class="scope-item"><input type="checkbox" class="scope-cat-chk" data-cat="'+esc(c)+'"'+(isCatChecked(c)?" checked":"")+'><span>'+esc(c)+'</span></label>';
+        }).join("") +
+        '</div>';
+    }).join("");
+    document.getElementById("rfScopeChips").innerHTML = html;
   }
   renderScopeChips();
-  document.getElementById("rfScopeChips").addEventListener("click", function(e){
-    var chip = e.target.closest(".chip[data-scope]");
-    if(!chip) return;
-    var v = chip.dataset.scope;
-    if(v === "__all__"){ rfScopeAll = true; rfSelectedScope = []; }
-    else {
-      rfScopeAll = false;
-      var idx = rfSelectedScope.indexOf(v);
-      if(idx>=0) rfSelectedScope.splice(idx,1); else rfSelectedScope.push(v);
-      if(rfSelectedScope.length===0) rfScopeAll = true;
+  function expandToExplicitList(){
+    if(rfScopeAll){ rfSelectedScope = MASTER_CATEGORIES.filter(function(c){return c!=="Khác";}).slice(); rfScopeAll = false; }
+  }
+  document.getElementById("rfScopeChips").addEventListener("change", function(e){
+    var t = e.target;
+    if(t.id === "rfScopeAllChk"){
+      rfScopeAll = t.checked;
+      rfSelectedScope = [];
+      renderScopeChips();
+      return;
     }
-    renderScopeChips();
+    if(t.classList.contains("scope-group-chk")){
+      expandToExplicitList();
+      var group = CATEGORY_GROUPS.find(function(g){ return g.name === t.dataset.group; });
+      group.cats.forEach(function(c){
+        var idx = rfSelectedScope.indexOf(c);
+        if(t.checked && idx<0) rfSelectedScope.push(c);
+        if(!t.checked && idx>=0) rfSelectedScope.splice(idx,1);
+      });
+      if(rfSelectedScope.length===0) rfScopeAll = true;
+      renderScopeChips();
+      return;
+    }
+    if(t.classList.contains("scope-cat-chk")){
+      expandToExplicitList();
+      var cat = t.dataset.cat;
+      var idx = rfSelectedScope.indexOf(cat);
+      if(t.checked && idx<0) rfSelectedScope.push(cat);
+      if(!t.checked && idx>=0) rfSelectedScope.splice(idx,1);
+      if(rfSelectedScope.length===0) rfScopeAll = true;
+      renderScopeChips();
+    }
   });
 
   var editingRoleId = null;
