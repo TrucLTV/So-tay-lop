@@ -763,7 +763,7 @@
       var summary = "Báo bài ngày "+fmtOccurDate(baoBaiDate)+":\n"+lines.join("\n");
       btn.disabled = true;
       msgF.className="msg"; msgF.textContent="Đang đăng…";
-      rpc("bcs_submit_note", {p_password: session.pw, p_kind:"thong_bao", p_category:"Học tập", p_content: summary, p_student_name: ""}).then(function(res){
+      rpc("bcs_submit_note", {p_password: session.pw, p_kind:"thong_bao", p_category:"Học tập", p_content: summary, p_student_name: "", p_date: baoBaiDate}).then(function(res){
         btn.disabled = false;
         if(res && res.ok){
           loadNotesAndRender();
