@@ -752,7 +752,7 @@
       if(!contentBB){ msgBB.className="msg err"; msgBB.textContent="Vui lòng nhập nội dung."; return; }
       btn.disabled = true;
       msgBB.className="msg"; msgBB.textContent="Đang gửi…";
-      rpc("bcs_submit_note", {p_password: session.pw, p_kind:"bao_bai", p_category:"Học tập", p_content: contentBB,
+      rpc("bcs_submit_note", {p_password: session.pw, p_kind:"bao_bai", p_category:"Học tập", p_content: contentBB, p_student_name: "",
         p_date: baoBaiDate, p_subject: addDraft.subject, p_period: addDraft.period}).then(function(res){
         btn.disabled = false;
         if(res && res.ok){
@@ -771,7 +771,7 @@
       var msg = document.getElementById("addMsg");
       var contentEl = document.getElementById("fContent");
       var content = contentEl ? contentEl.value.trim() : "";
-      var payload = { p_password: session.pw, p_kind: kindId, p_content: content, p_category: sec.name };
+      var payload = { p_password: session.pw, p_kind: kindId, p_content: content, p_category: sec.name, p_student_name: "" };
 
       if(kindId === "vi_pham"){
         var cat = addDraft.cat || (sec.cats.length===1 ? sec.cats[0] : null);
@@ -830,7 +830,7 @@
       var content = contentEl ? contentEl.value.trim() : "";
       var msg = document.getElementById("editMsg_"+id);
       if(!content && kind !== "vi_pham"){ msg.className="msg err"; msg.textContent="Vui lòng nhập nội dung."; return; }
-      var payload = { p_password: session.pw, p_id: id, p_content: content, p_category: note ? note.category : null };
+      var payload = { p_password: session.pw, p_id: id, p_content: content, p_category: note ? note.category : null, p_student_name: note ? (note.student_name||"") : "" };
       if(kind === "vi_pham"){
         var cat = (id in selectedEditCat) ? selectedEditCat[id] : (note ? note.category : null);
         var subject = (id in selectedEditSubject) ? selectedEditSubject[id] : (note ? note.subject : null);
