@@ -40,6 +40,14 @@
   .filter-bar .btn{white-space:nowrap;}
   .sections-grid{display:grid; grid-template-columns:repeat(auto-fit, minmax(460px, 1fr)); gap:16px; align-items:start;}
   .sections-grid .grp-card{margin-bottom:0;}
+  .matrix-table{width:100%; border-collapse:separate; border-spacing:8px;}
+  .matrix-table th{background:none; border:none; padding:6px 10px; text-align:left; font-size:0.78rem; text-transform:none; letter-spacing:0; color:var(--ink-muted); position:static;}
+  .matrix-rowhead{font-weight:700; color:var(--ink); font-size:0.9rem; white-space:nowrap; vertical-align:middle;}
+  .matrix-cell{background:var(--surface); border:1.5px solid var(--border-strong); border-radius:var(--radius-sm); padding:14px 10px; text-align:center; cursor:pointer; transition:transform .08s ease, box-shadow .08s ease; min-width:120px;}
+  .matrix-cell:hover{box-shadow:var(--shadow); transform:translateY(-1px); border-color:var(--accent);}
+  .mc-count{font-family:var(--font-display); font-weight:800; font-size:1.5rem; color:var(--ink);}
+  .mc-tag{font-size:0.68rem; font-weight:700; color:var(--accent-strong); margin-top:2px;}
+  .mc-tag.locked{color:var(--ink-faint);}
   .note-item .nt-actions{margin-top:6px; display:flex; gap:6px;}
   .add-form{border-top:1px dashed var(--border); margin-top:10px; padding-top:10px;}
   .edit-form{background:var(--surface-2); border:1px solid var(--border-strong); border-radius:var(--radius-sm); padding:10px; margin-bottom:8px;}
@@ -211,6 +219,16 @@
           </table></div>
         </div>
       </div>
+      <div class="card">
+        <h2>Nhận xét cho ban cán sự</h2>
+        <p class="hint">Nhận xét sẽ hiện ở ô "Nhận xét của GV" tương ứng trên trang ban cán sự.</p>
+        <label>Mục</label>
+        <div class="chip-row" id="remarkGroupChips"></div>
+        <div class="field"><label>Nội dung nhận xét</label><textarea id="remarkContent" placeholder="Sau khi xem thống kê, ban cán sự cần làm gì tiếp theo…"></textarea></div>
+        <button class="btn primary" id="btnSendRemark" style="width:auto;">Gửi nhận xét</button>
+        <div class="msg" id="remarkMsg"></div>
+        <div id="remarkList" style="margin-top:14px;"></div>
+      </div>
     </div>
 
     <div id="sub-account" style="display:none;">
@@ -306,8 +324,13 @@
   var selectedEditCat = {};     // note id -> category
   var selectedEditSubject = {}; // note id -> subject
   var selectedEditPeriod = {};  // note id -> period
-  var SECTIONS = CATEGORY_GROUPS.map(function(g, i){ return {name:g.name, cats:g.cats, id:"g"+i, always:false}; });
-  SECTIONS.push({name:"Khác", cats:["Khác"], id:"gKhac", always:true});
+  var SECTIONS = CATEGORY_GROUPS.map(function(g, i){ return {name:g.name, cats:g.cats, id:"g"+i}; });
+  var ROW_KINDS = [
+    { id: "thong_bao", name: "Thông báo", writable: "bcs" },
+    { id: "vi_pham", name: "Vi phạm", writable: "bcs" },
+    { id: "khen_thuong", name: "Khen thưởng", writable: "bcs" },
+    { id: "nhan_xet_gv", name: "Nhận xét của GV", writable: "gv" }
+  ];
 
   // ---- datalist ----
   document.getElementById("studentList").innerHTML = DEFAULT_STUDENTS.map(function(n){ return '<option value="'+esc(n)+'">'; }).join("");
@@ -367,12 +390,11 @@
   }
 
   // ---- BCS submit screen ----
-  // Trang tổng thể (overview): xem ghi chú cả 4 mục + Khác, kể cả của bạn khác.
-  // Trang con theo mục (detail): chỉ vào được nếu có quyền — form theo thứ tự
-  // Ngày/Môn/Tiết -> Học sinh -> Lỗi vi phạm -> Ghi chú (tuỳ chọn) -> danh sách bên dưới.
-  var currentSectionId = null; // null = overview, else = id trong SECTIONS
+  // Trang tổng thể: bảng ma trận 4 mục (cột) x 4 loại nội dung (dòng: Thông báo/Vi phạm/Khen thưởng/Nhận xét của GV).
+  // Bấm 1 ô -> vào trang con của ô đó: danh sách + form ghi (nếu có quyền ghi ở ô đó).
+  var currentCell = null; // null = trang ma trận, else {sectionId, kindId}
   var addDraft = { subject: null, period: null, cat: null };
-  var filterState = { date: null, subject: null, period: null }; // lọc ở trang tổng thể
+  var filterState = { date: null, subject: null, period: null }; // lọc trong trang con của 1 ô
 
   function scopeGroupNames(){
     var scope = session.role.scope;
@@ -380,7 +402,19 @@
     return scope.split(",").map(function(s){ return s.trim(); }).filter(Boolean);
   }
   function isSectionAllowed(sec){
-    return sec.always || scopeGroupNames().indexOf(sec.name) >= 0;
+    return scopeGroupNames().indexOf(sec.name) >= 0;
+  }
+  function cellWritable(sec, kindId){
+    var row = ROW_KINDS.find(function(r){ return r.id === kindId; });
+    return row.writable === "bcs" && isSectionAllowed(sec);
+  }
+  function notesFor(sec, kindId){
+    return allNotes.filter(function(n){
+      var k = n.kind || "vi_pham";
+      if(k !== kindId) return false;
+      if(k === "vi_pham") return sec.cats.indexOf(n.category) >= 0;
+      return n.category === sec.name;
+    });
   }
   function sectionOf(category){
     return SECTIONS.find(function(s){ return s.cats.indexOf(category) >= 0; }) || {cats:[category]};
@@ -394,7 +428,7 @@
   function showSubmit(){
     showScreen("screenSubmit");
     document.getElementById("roleNameLabel").textContent = session.role.role_name;
-    currentSectionId = null;
+    currentCell = null;
     editingNoteId = null;
     loadNotesAndRender();
   }
@@ -414,7 +448,7 @@
   }
 
   function renderScreen(){
-    if(currentSectionId) renderDetail(currentSectionId); else renderOverview();
+    if(currentCell) renderCellDetail(currentCell.sectionId, currentCell.kindId); else renderMatrix();
   }
 
   function noteRowHtml(n, canEdit){
@@ -430,25 +464,34 @@
   }
 
   function noteEditRowHtml(n){
-    var sec = sectionOf(n.category);
-    var eCat = (n.id in selectedEditCat) ? selectedEditCat[n.id] : n.category;
-    var eSubject = (n.id in selectedEditSubject) ? selectedEditSubject[n.id] : n.subject;
-    var ePeriod = (n.id in selectedEditPeriod) ? selectedEditPeriod[n.id] : n.period;
-    var catChips = sec.cats.length > 1 ? '<label>Lỗi vi phạm</label><div class="chip-row" style="margin-bottom:8px;">' + sec.cats.map(function(c){
-      return '<button type="button" class="chip'+(c===eCat?" selected":"")+'" data-editcat="'+esc(c)+'" data-note-id="'+n.id+'">'+esc(c)+'</button>';
-    }).join("") + '</div>' : '';
-    var subjectChips = '<label>Môn</label><div class="chip-row" style="margin-bottom:8px;">' + SUBJECTS.map(function(s){
-      return '<button type="button" class="chip'+(s===eSubject?" selected":"")+'" data-editsubject="'+esc(s)+'" data-note-id="'+n.id+'">'+esc(s)+'</button>';
-    }).join("") + '</div>';
-    var periodChips = '<label>Tiết</label><div class="chip-row" style="margin-bottom:8px;">' + PERIODS.map(function(p){
-      return '<button type="button" class="chip'+(p===ePeriod?" selected":"")+'" data-editperiod="'+p+'" data-note-id="'+n.id+'">Tiết '+p+'</button>';
-    }).join("") + '</div>';
-    return '<tr><td colspan="7"><div class="edit-form">' +
-      '<label>Ngày</label><div class="field" style="margin-bottom:8px;"><input type="date" class="editDate" value="'+esc(n.occur_date||"")+'"></div>' +
-      subjectChips + periodChips +
-      '<label>Học sinh liên quan</label><div class="field" style="margin-bottom:8px;"><input type="text" class="editStudent" list="studentList" value="'+esc(n.student_name||"")+'"></div>' +
-      catChips +
-      '<label>Ghi chú</label><div class="field" style="margin-bottom:8px;"><textarea class="editContent" placeholder="Ghi chú (nếu có)">'+esc(n.content||"")+'</textarea></div>' +
+    var kind = n.kind || "vi_pham";
+    var body;
+    if(kind === "vi_pham"){
+      var sec = sectionOf(n.category);
+      var eCat = (n.id in selectedEditCat) ? selectedEditCat[n.id] : n.category;
+      var eSubject = (n.id in selectedEditSubject) ? selectedEditSubject[n.id] : n.subject;
+      var ePeriod = (n.id in selectedEditPeriod) ? selectedEditPeriod[n.id] : n.period;
+      var catChips = sec.cats.length > 1 ? '<label>Lỗi vi phạm</label><div class="chip-row" style="margin-bottom:8px;">' + sec.cats.map(function(c){
+        return '<button type="button" class="chip'+(c===eCat?" selected":"")+'" data-editcat="'+esc(c)+'" data-note-id="'+n.id+'">'+esc(c)+'</button>';
+      }).join("") + '</div>' : '';
+      var subjectChips = '<label>Môn</label><div class="chip-row" style="margin-bottom:8px;">' + SUBJECTS.map(function(s){
+        return '<button type="button" class="chip'+(s===eSubject?" selected":"")+'" data-editsubject="'+esc(s)+'" data-note-id="'+n.id+'">'+esc(s)+'</button>';
+      }).join("") + '</div>';
+      var periodChips = '<label>Tiết</label><div class="chip-row" style="margin-bottom:8px;">' + PERIODS.map(function(p){
+        return '<button type="button" class="chip'+(p===ePeriod?" selected":"")+'" data-editperiod="'+p+'" data-note-id="'+n.id+'">Tiết '+p+'</button>';
+      }).join("") + '</div>';
+      body = '<label>Ngày</label><div class="field" style="margin-bottom:8px;"><input type="date" class="editDate" value="'+esc(n.occur_date||"")+'"></div>' +
+        subjectChips + periodChips +
+        '<label>Học sinh liên quan</label><div class="field" style="margin-bottom:8px;"><input type="text" class="editStudent" list="studentList" value="'+esc(n.student_name||"")+'"></div>' +
+        catChips +
+        '<label>Ghi chú</label><div class="field" style="margin-bottom:8px;"><textarea class="editContent" placeholder="Ghi chú (nếu có)">'+esc(n.content||"")+'</textarea></div>';
+    } else if(kind === "khen_thuong"){
+      body = '<label>Học sinh liên quan</label><div class="field" style="margin-bottom:8px;"><input type="text" class="editStudent" list="studentList" value="'+esc(n.student_name||"")+'"></div>' +
+        '<label>Nội dung khen thưởng</label><div class="field" style="margin-bottom:8px;"><textarea class="editContent">'+esc(n.content||"")+'</textarea></div>';
+    } else {
+      body = '<label>Nội dung thông báo</label><div class="field" style="margin-bottom:8px;"><textarea class="editContent">'+esc(n.content||"")+'</textarea></div>';
+    }
+    return '<tr><td colspan="7"><div class="edit-form" data-kind="'+kind+'">' + body +
       '<div class="row"><button class="btn primary sm" data-action="save-edit" data-note-id="'+n.id+'">Lưu</button>' +
       '<button class="btn ghost sm" data-action="cancel-edit">Huỷ</button></div>' +
       '<div class="msg" id="editMsg_'+n.id+'"></div>' +
@@ -485,75 +528,97 @@
       '</div>';
   }
 
-  // ---- overview: xem cả 4 mục + Khác, dạng bảng ngang, có lọc theo ngày/môn/tiết ----
-  function renderOverview(){
-    var sectionsHtml = SECTIONS.map(function(sec){
-      var allowed = isSectionAllowed(sec);
-      var notesInGroup = applyFilter(allNotes.filter(function(n){ return sec.cats.indexOf(n.category) >= 0; }));
-      return '<div class="grp-card">' +
-        '<div class="grp-head"><h2>'+esc(sec.name)+'</h2>' +
-        (allowed ? '<button class="btn sm" data-action="enter" data-section="'+sec.id+'">+ Ghi nhận</button>' : '<span class="grp-locked">🔒 Không có quyền ghi</span>') +
-        '</div>' + notesTableHtml(notesInGroup, function(n){ return session.role.role_id === n.role_id; }) + '</div>';
+  // ---- trang tổng thể: bảng ma trận 4 mục x 4 loại nội dung ----
+  function renderMatrix(){
+    var headHtml = '<tr><th></th>' + SECTIONS.map(function(sec){ return '<th>'+esc(sec.name)+'</th>'; }).join("") + '</tr>';
+    var bodyHtml = ROW_KINDS.map(function(row){
+      var cells = SECTIONS.map(function(sec){
+        var count = notesFor(sec, row.id).length;
+        var writable = cellWritable(sec, row.id);
+        return '<td class="matrix-cell" data-action="open-cell" data-section="'+sec.id+'" data-kind="'+row.id+'">' +
+          '<div class="mc-count">'+count+'</div>' +
+          (writable ? '<div class="mc-tag">có thể ghi</div>' : '<div class="mc-tag locked">🔒 chỉ xem</div>') +
+          '</td>';
+      }).join("");
+      return '<tr><th class="matrix-rowhead">'+esc(row.name)+'</th>'+cells+'</tr>';
     }).join("");
-    document.getElementById("groupSections").innerHTML = filterBarHtml() + '<div class="sections-grid">' + sectionsHtml + '</div>';
+    document.getElementById("groupSections").innerHTML =
+      '<div class="table-wrap"><table class="matrix-table"><thead>'+headHtml+'</thead><tbody>'+bodyHtml+'</tbody></table></div>';
   }
 
-  // ---- trang con theo mục ----
-  function renderDetail(sectionId){
+  // ---- trang con của 1 ô (mục x loại nội dung) ----
+  function renderCellDetail(sectionId, kindId){
     var sec = SECTIONS.find(function(s){ return s.id === sectionId; });
-    if(!sec || !isSectionAllowed(sec)){ currentSectionId = null; renderOverview(); return; }
-    var notesInGroup = allNotes.filter(function(n){ return sec.cats.indexOf(n.category) >= 0; });
-    var listHtml = notesTableHtml(notesInGroup, function(n){ return session.role.role_id === n.role_id; });
+    var row = ROW_KINDS.find(function(r){ return r.id === kindId; });
+    if(!sec || !row){ currentCell = null; renderScreen(); return; }
+    var notes = applyFilter(notesFor(sec, kindId));
+    var listHtml = notesTableHtml(notes, function(n){ return session.role.role_id === n.role_id; });
+    var canWrite = cellWritable(sec, kindId);
 
-    var subjectChips = '<label>Môn</label><div class="chip-row" style="margin-bottom:8px;">' + SUBJECTS.map(function(s){
-      return '<button type="button" class="chip'+(s===addDraft.subject?" selected":"")+'" data-addsubject="'+esc(s)+'">'+esc(s)+'</button>';
-    }).join("") + '</div>';
-    var periodChips = '<label>Tiết</label><div class="chip-row" style="margin-bottom:8px;">' + PERIODS.map(function(p){
-      return '<button type="button" class="chip'+(p===addDraft.period?" selected":"")+'" data-addperiod="'+p+'">Tiết '+p+'</button>';
-    }).join("") + '</div>';
-    var catChips = sec.cats.length > 1 ? '<label>Lỗi vi phạm</label><div class="chip-row" style="margin-bottom:8px;">' + sec.cats.map(function(c){
-      return '<button type="button" class="chip'+(c===addDraft.cat?" selected":"")+'" data-addcat="'+esc(c)+'">'+esc(c)+'</button>';
-    }).join("") + '</div>' : '';
+    var formHtml = "";
+    if(canWrite && kindId === "vi_pham"){
+      var subjectChips = '<label>Môn</label><div class="chip-row" style="margin-bottom:8px;">' + SUBJECTS.map(function(s){
+        return '<button type="button" class="chip'+(s===addDraft.subject?" selected":"")+'" data-addsubject="'+esc(s)+'">'+esc(s)+'</button>';
+      }).join("") + '</div>';
+      var periodChips = '<label>Tiết</label><div class="chip-row" style="margin-bottom:8px;">' + PERIODS.map(function(p){
+        return '<button type="button" class="chip'+(p===addDraft.period?" selected":"")+'" data-addperiod="'+p+'">Tiết '+p+'</button>';
+      }).join("") + '</div>';
+      var catChips = sec.cats.length > 1 ? '<label>Lỗi vi phạm</label><div class="chip-row" style="margin-bottom:8px;">' + sec.cats.map(function(c){
+        return '<button type="button" class="chip'+(c===addDraft.cat?" selected":"")+'" data-addcat="'+esc(c)+'">'+esc(c)+'</button>';
+      }).join("") + '</div>' : '';
+      formHtml = '<label>Ngày</label><div class="field" style="margin-bottom:8px;"><input type="date" id="fDate" value="'+toDateInputVal(new Date())+'"></div>' +
+        subjectChips + periodChips +
+        '<label>Học sinh liên quan</label><div class="field" style="margin-bottom:8px;"><input type="text" id="fStudent" list="studentList" placeholder="Gõ hoặc chọn tên học sinh"></div>' +
+        catChips +
+        '<label>Ghi chú</label><div class="field" style="margin-bottom:8px;"><textarea id="fContent" placeholder="Ghi chú thêm (nếu có)"></textarea></div>' +
+        '<button class="btn primary" data-action="add">Ghi nhận</button><div class="msg" id="addMsg"></div>';
+    } else if(canWrite && kindId === "khen_thuong"){
+      formHtml = '<label>Học sinh liên quan</label><div class="field" style="margin-bottom:8px;"><input type="text" id="fStudent" list="studentList" placeholder="Gõ hoặc chọn tên học sinh (nếu có)"></div>' +
+        '<label>Nội dung khen thưởng</label><div class="field" style="margin-bottom:8px;"><textarea id="fContent" placeholder="Khen ai, vì việc gì…"></textarea></div>' +
+        '<button class="btn primary" data-action="add">Ghi khen thưởng</button><div class="msg" id="addMsg"></div>';
+    } else if(canWrite && kindId === "thong_bao"){
+      formHtml = '<label>Nội dung thông báo</label><div class="field" style="margin-bottom:8px;"><textarea id="fContent" placeholder="Nội dung thông báo…"></textarea></div>' +
+        '<button class="btn primary" data-action="add">Đăng thông báo</button><div class="msg" id="addMsg"></div>';
+    } else if(kindId === "nhan_xet_gv"){
+      formHtml = '<div class="empty">Chỉ giáo viên mới ghi được mục này (từ trang quản trị).</div>';
+    } else {
+      formHtml = '<div class="empty">Bạn không có quyền ghi ở mục này.</div>';
+    }
 
     document.getElementById("groupSections").innerHTML =
-      '<button class="btn ghost sm" data-action="back" style="margin-bottom:12px;">← Quay lại</button>' +
-      '<div class="grp-card">' +
-      '<div class="grp-head"><h2>'+esc(sec.name)+'</h2></div>' +
-      '<label>Ngày</label><div class="field" style="margin-bottom:8px;"><input type="date" id="fDate" value="'+toDateInputVal(new Date())+'"></div>' +
-      subjectChips + periodChips +
-      '<label>Học sinh liên quan</label><div class="field" style="margin-bottom:8px;"><input type="text" id="fStudent" list="studentList" placeholder="Gõ hoặc chọn tên học sinh"></div>' +
-      catChips +
-      '<label>Ghi chú</label><div class="field" style="margin-bottom:8px;"><textarea id="fContent" placeholder="Ghi chú thêm (nếu có)"></textarea></div>' +
-      '<button class="btn primary" data-action="add">Ghi nhận</button>' +
-      '<div class="msg" id="addMsg"></div>' +
+      '<button class="btn ghost sm" data-action="back-matrix" style="margin-bottom:12px;">← Quay lại bảng tổng hợp</button>' +
+      filterBarHtml() +
+      '<div class="grp-card"><div class="grp-head"><h2>'+esc(sec.name)+' · '+esc(row.name)+'</h2></div>' +
+      formHtml +
       '</div>' +
-      '<h3 style="font-size:0.86rem; margin:16px 0 8px;">Danh sách đã ghi</h3>' +
+      '<h3 style="font-size:0.86rem; margin:16px 0 8px;">Danh sách</h3>' +
       listHtml;
   }
 
   document.getElementById("groupSections").addEventListener("change", function(e){
     var t = e.target;
-    if(t.id === "filterDate"){ filterState.date = t.value || null; renderOverview(); return; }
-    if(t.id === "filterSubject"){ filterState.subject = t.value || null; renderOverview(); return; }
-    if(t.id === "filterPeriod"){ filterState.period = t.value ? Number(t.value) : null; renderOverview(); return; }
+    if(t.id === "filterDate"){ filterState.date = t.value || null; renderScreen(); return; }
+    if(t.id === "filterSubject"){ filterState.subject = t.value || null; renderScreen(); return; }
+    if(t.id === "filterPeriod"){ filterState.period = t.value ? Number(t.value) : null; renderScreen(); return; }
   });
 
   document.getElementById("groupSections").addEventListener("click", function(e){
     if(e.target.closest("[data-action='clear-filter']")){
       filterState = { date: null, subject: null, period: null };
-      renderOverview();
-      return;
-    }
-    var enterBtn = e.target.closest("[data-action='enter']");
-    if(enterBtn){
-      currentSectionId = enterBtn.dataset.section;
-      editingNoteId = null;
-      addDraft = { subject: null, period: null, cat: null };
       renderScreen();
       return;
     }
-    if(e.target.closest("[data-action='back']")){
-      currentSectionId = null;
+    var openCellBtn = e.target.closest("[data-action='open-cell']");
+    if(openCellBtn){
+      currentCell = { sectionId: openCellBtn.dataset.section, kindId: openCellBtn.dataset.kind };
+      editingNoteId = null;
+      addDraft = { subject: null, period: null, cat: null };
+      filterState = { date: null, subject: null, period: null };
+      renderScreen();
+      return;
+    }
+    if(e.target.closest("[data-action='back-matrix']")){
+      currentCell = null;
       editingNoteId = null;
       renderScreen();
       return;
@@ -600,20 +665,35 @@
     var action = btn.dataset.action;
 
     if(action === "add"){
-      var sec = SECTIONS.find(function(s){ return s.id===currentSectionId; });
-      var cat = addDraft.cat || (sec.cats.length===1 ? sec.cats[0] : null);
-      var date = document.getElementById("fDate").value || null;
-      var student = document.getElementById("fStudent").value.trim();
-      var content = document.getElementById("fContent").value.trim();
+      var sec = SECTIONS.find(function(s){ return s.id===currentCell.sectionId; });
+      var kindId = currentCell.kindId;
       var msg = document.getElementById("addMsg");
-      if(!cat){ msg.className="msg err"; msg.textContent="Vui lòng chọn lỗi vi phạm."; return; }
-      if(!date){ msg.className="msg err"; msg.textContent="Vui lòng chọn ngày."; return; }
-      if(!addDraft.subject){ msg.className="msg err"; msg.textContent="Vui lòng chọn môn."; return; }
-      if(!addDraft.period){ msg.className="msg err"; msg.textContent="Vui lòng chọn tiết."; return; }
+      var contentEl = document.getElementById("fContent");
+      var content = contentEl ? contentEl.value.trim() : "";
+      var payload = { p_password: session.pw, p_kind: kindId, p_content: content, p_category: sec.name };
+
+      if(kindId === "vi_pham"){
+        var cat = addDraft.cat || (sec.cats.length===1 ? sec.cats[0] : null);
+        var date = document.getElementById("fDate").value || null;
+        var student = document.getElementById("fStudent").value.trim();
+        if(!cat){ msg.className="msg err"; msg.textContent="Vui lòng chọn lỗi vi phạm."; return; }
+        if(!date){ msg.className="msg err"; msg.textContent="Vui lòng chọn ngày."; return; }
+        if(!addDraft.subject){ msg.className="msg err"; msg.textContent="Vui lòng chọn môn."; return; }
+        if(!addDraft.period){ msg.className="msg err"; msg.textContent="Vui lòng chọn tiết."; return; }
+        payload.p_category = cat; payload.p_student_name = student; payload.p_date = date; payload.p_subject = addDraft.subject; payload.p_period = addDraft.period;
+      } else if(kindId === "khen_thuong"){
+        if(!content){ msg.className="msg err"; msg.textContent="Vui lòng nhập nội dung."; return; }
+        var studentK = document.getElementById("fStudent");
+        payload.p_student_name = studentK ? studentK.value.trim() : "";
+      } else if(kindId === "thong_bao"){
+        if(!content){ msg.className="msg err"; msg.textContent="Vui lòng nhập nội dung."; return; }
+      } else {
+        return;
+      }
+
       btn.disabled = true;
       msg.className="msg"; msg.textContent="Đang gửi…";
-      rpc("bcs_submit_note", {p_password: session.pw, p_category: cat, p_student_name: student, p_content: content,
-        p_date: date, p_subject: addDraft.subject, p_period: addDraft.period}).then(function(res){
+      rpc("bcs_submit_note", payload).then(function(res){
         btn.disabled = false;
         if(res && res.ok){
           addDraft = { subject: null, period: null, cat: null };
@@ -643,18 +723,31 @@
     if(action === "save-edit"){
       var id = btn.dataset.noteId;
       var note = allNotes.find(function(n){ return n.id===id; });
+      var kind = note ? (note.kind || "vi_pham") : "vi_pham";
       var container = btn.closest(".edit-form");
-      var cat = (id in selectedEditCat) ? selectedEditCat[id] : (note ? note.category : null);
-      var subject = (id in selectedEditSubject) ? selectedEditSubject[id] : (note ? note.subject : null);
-      var period = (id in selectedEditPeriod) ? selectedEditPeriod[id] : (note ? note.period : null);
-      var date = container.querySelector(".editDate").value || null;
-      var student = container.querySelector(".editStudent").value.trim();
-      var content = container.querySelector(".editContent").value.trim();
+      var contentEl = container.querySelector(".editContent");
+      var content = contentEl ? contentEl.value.trim() : "";
       var msg = document.getElementById("editMsg_"+id);
+      if(!content && kind !== "vi_pham"){ msg.className="msg err"; msg.textContent="Vui lòng nhập nội dung."; return; }
+      var payload = { p_password: session.pw, p_id: id, p_content: content, p_category: note ? note.category : null };
+      if(kind === "vi_pham"){
+        var cat = (id in selectedEditCat) ? selectedEditCat[id] : (note ? note.category : null);
+        var subject = (id in selectedEditSubject) ? selectedEditSubject[id] : (note ? note.subject : null);
+        var period = (id in selectedEditPeriod) ? selectedEditPeriod[id] : (note ? note.period : null);
+        var dateEl = container.querySelector(".editDate");
+        var studentEl = container.querySelector(".editStudent");
+        payload.p_category = cat;
+        payload.p_student_name = studentEl ? studentEl.value.trim() : "";
+        payload.p_date = dateEl ? (dateEl.value || null) : null;
+        payload.p_subject = subject;
+        payload.p_period = period;
+      } else if(kind === "khen_thuong"){
+        var studentEl2 = container.querySelector(".editStudent");
+        payload.p_student_name = studentEl2 ? studentEl2.value.trim() : "";
+      }
       btn.disabled = true;
       msg.className="msg"; msg.textContent="Đang lưu…";
-      rpc("bcs_update_note", {p_password: session.pw, p_id: id, p_category: cat, p_student_name: student, p_content: content,
-        p_date: date, p_subject: subject, p_period: period}).then(function(res){
+      rpc("bcs_update_note", payload).then(function(res){
         btn.disabled = false;
         if(res && res.ok){
           editingNoteId = null;
@@ -686,7 +779,7 @@
     session.pw = null;
     allNotes = [];
     editingNoteId = null;
-    currentSectionId = null;
+    currentCell = null;
     showScreen("screenLogin");
   });
 
@@ -699,6 +792,7 @@
     var sun = new Date(mon); sun.setDate(mon.getDate()+6);
     document.getElementById("sumStart").value = toDateInputVal(mon);
     document.getElementById("sumEnd").value = toDateInputVal(sun);
+    loadRemarks();
   }
   document.getElementById("btnAdminLogout").addEventListener("click", function(){
     adminSession.password = null;
@@ -832,6 +926,64 @@
         loadRoles();
       } else {
         msg.className="msg err"; msg.textContent="Không lưu được (tên vai trò có thể đã tồn tại).";
+      }
+    }).catch(function(){ btn.disabled=false; msg.className="msg err"; msg.textContent="Lỗi kết nối."; });
+  });
+
+  // ---- nhận xét cho ban cán sự (kind = nhan_xet_gv) ----
+  var selectedRemarkGroup = CATEGORY_GROUPS[0].name;
+  function renderRemarkChips(){
+    document.getElementById("remarkGroupChips").innerHTML = CATEGORY_GROUPS.map(function(g){
+      return '<button type="button" class="chip'+(g.name===selectedRemarkGroup?" selected":"")+'" data-remarkgroup="'+esc(g.name)+'">'+esc(g.name)+'</button>';
+    }).join("");
+  }
+  renderRemarkChips();
+  document.getElementById("remarkGroupChips").addEventListener("click", function(e){
+    var chip = e.target.closest(".chip[data-remarkgroup]");
+    if(!chip) return;
+    selectedRemarkGroup = chip.dataset.remarkgroup;
+    renderRemarkChips();
+    loadRemarks();
+  });
+
+  function loadRemarks(){
+    var el = document.getElementById("remarkList");
+    el.innerHTML = '<div class="empty">Đang tải…</div>';
+    rpc("bcs_admin_get_notes", {p_admin_password: adminSession.password, p_start: null, p_end: null}).then(function(res){
+      if(!res || !res.ok){ el.innerHTML = '<div class="empty">Không tải được.</div>'; return; }
+      var remarks = (res.notes || []).filter(function(n){ return n.kind === "nhan_xet_gv" && n.category === selectedRemarkGroup; });
+      if(!remarks.length){ el.innerHTML = '<div class="empty">Chưa có nhận xét nào cho mục này.</div>'; return; }
+      el.innerHTML = remarks.map(function(n){
+        return '<div class="note-item"><div class="nt-body">'+esc(n.content)+'</div>'+
+          '<div class="nt-meta">'+fmtDateTime(n.created_at)+' <button class="btn ghost sm danger" data-delremark="'+n.id+'" style="margin-left:8px;">Xoá</button></div></div>';
+      }).join("");
+    }).catch(function(){ el.innerHTML = '<div class="empty">Lỗi kết nối.</div>'; });
+  }
+
+  document.getElementById("remarkList").addEventListener("click", function(e){
+    var b = e.target.closest("[data-delremark]");
+    if(!b) return;
+    if(!confirm("Xoá nhận xét này?")) return;
+    rpc("bcs_admin_delete_note", {p_admin_password: adminSession.password, p_id: b.dataset.delremark}).then(function(res){
+      if(res && res.ok){ loadRemarks(); } else { alert("Không xoá được."); }
+    });
+  });
+
+  document.getElementById("btnSendRemark").addEventListener("click", function(){
+    var msg = document.getElementById("remarkMsg");
+    var content = document.getElementById("remarkContent").value.trim();
+    if(!content){ msg.className="msg err"; msg.textContent="Vui lòng nhập nội dung."; return; }
+    var btn = document.getElementById("btnSendRemark");
+    btn.disabled = true;
+    msg.className="msg"; msg.textContent="Đang gửi…";
+    rpc("bcs_admin_submit_remark", {p_admin_password: adminSession.password, p_category: selectedRemarkGroup, p_content: content}).then(function(res){
+      btn.disabled = false;
+      if(res && res.ok){
+        msg.className="msg ok"; msg.textContent="✓ Đã gửi.";
+        document.getElementById("remarkContent").value = "";
+        loadRemarks();
+      } else {
+        msg.className="msg err"; msg.textContent="Không gửi được.";
       }
     }).catch(function(){ btn.disabled=false; msg.className="msg err"; msg.textContent="Lỗi kết nối."; });
   });
