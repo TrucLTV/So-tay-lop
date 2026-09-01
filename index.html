@@ -248,6 +248,12 @@
     { name: "Chuyên cần / tác phong", cats: ["Đi trễ","Nghỉ không phép","Đồng phục / tác phong"] }
   ];
 
+  var SUBJECTS = [
+    "Ngữ văn","Toán","Tiếng Anh","KHTN","Lịch sử - Địa lý","GDCD",
+    "Tin học","Công nghệ","GDTC","Âm nhạc","Mỹ thuật","HĐTN","Khác"
+  ];
+  var PERIODS = [1,2,3,4,5];
+
   var DEFAULT_STUDENTS = [
     "Dương Quốc An","Phạm Khánh An","Biện Khánh An","Nguyễn Trần Minh Ân",
     "Phạm Y Bảo","Huỳnh Bảo Châu","Châu Nghĩa Danh","Phạm Ngọc Hải Di",
@@ -291,8 +297,9 @@
   var adminSession = { password: null };
   var allNotes = [];
   var editingNoteId = null;
-  var selectedAddCat = {};  // section id -> category
-  var selectedEditCat = {}; // note id -> category
+  var selectedEditCat = {};     // note id -> category
+  var selectedEditSubject = {}; // note id -> subject
+  var selectedEditPeriod = {};  // note id -> period
   var SECTIONS = CATEGORY_GROUPS.map(function(g, i){ return {name:g.name, cats:g.cats, id:"g"+i, always:false}; });
   SECTIONS.push({name:"Khác", cats:["Khác"], id:"gKhac", always:true});
 
@@ -353,19 +360,35 @@
     });
   }
 
-  // ---- BCS submit screen (trang tổng thể: xem cả 4 mục, chỉ ghi/sửa/xoá được mục mình phụ trách) ----
+  // ---- BCS submit screen ----
+  // Trang tổng thể (overview): xem ghi chú cả 4 mục + Khác, kể cả của bạn khác.
+  // Trang con theo mục (detail): chỉ vào được nếu có quyền — form theo thứ tự
+  // Ngày/Môn/Tiết -> Học sinh -> Lỗi vi phạm -> Ghi chú (tuỳ chọn) -> danh sách bên dưới.
+  var currentSectionId = null; // null = overview, else = id trong SECTIONS
+  var addDraft = { subject: null, period: null, cat: null };
+
   function scopeGroupNames(){
     var scope = session.role.scope;
     if(scope === "all" || !scope) return CATEGORY_GROUPS.map(function(g){ return g.name; });
     return scope.split(",").map(function(s){ return s.trim(); }).filter(Boolean);
   }
+  function isSectionAllowed(sec){
+    return sec.always || scopeGroupNames().indexOf(sec.name) >= 0;
+  }
+  function sectionOf(category){
+    return SECTIONS.find(function(s){ return s.cats.indexOf(category) >= 0; }) || {cats:[category]};
+  }
+  function fmtOccurDate(d){
+    if(!d) return "—";
+    var p = d.split("-");
+    return p.length===3 ? (p[2]+"/"+p[1]+"/"+p[0]) : d;
+  }
 
   function showSubmit(){
     showScreen("screenSubmit");
     document.getElementById("roleNameLabel").textContent = session.role.role_name;
+    currentSectionId = null;
     editingNoteId = null;
-    selectedAddCat = {};
-    selectedEditCat = {};
     loadNotesAndRender();
   }
 
@@ -376,102 +399,176 @@
       if(res && res.ok){
         allNotes = res.notes || [];
         msg.textContent = "";
-        renderGroups();
+        renderScreen();
       } else {
         msg.className = "msg err"; msg.textContent = "Không tải được dữ liệu — thử đăng xuất rồi vào lại.";
       }
     }).catch(function(){ msg.className="msg err"; msg.textContent="Lỗi kết nối — thử lại."; });
   }
 
-  function sectionOf(category){
-    return SECTIONS.find(function(s){ return s.cats.indexOf(category) >= 0; }) || {cats:[category]};
+  function renderScreen(){
+    if(currentSectionId) renderDetail(currentSectionId); else renderOverview();
   }
 
   function noteItemHtml(n, canEdit){
     if(editingNoteId === n.id){
       var sec = sectionOf(n.category);
-      var editCat = selectedEditCat[n.id] || n.category;
-      var catChips = sec.cats.length > 1 ? '<div class="chip-row" style="margin-bottom:8px;">' + sec.cats.map(function(c){
-        return '<button type="button" class="chip'+(c===editCat?" selected":"")+'" data-editcat="'+esc(c)+'" data-note-id="'+n.id+'">'+esc(c)+'</button>';
+      var eCat = (n.id in selectedEditCat) ? selectedEditCat[n.id] : n.category;
+      var eSubject = (n.id in selectedEditSubject) ? selectedEditSubject[n.id] : n.subject;
+      var ePeriod = (n.id in selectedEditPeriod) ? selectedEditPeriod[n.id] : n.period;
+      var catChips = sec.cats.length > 1 ? '<label>Lỗi vi phạm</label><div class="chip-row" style="margin-bottom:8px;">' + sec.cats.map(function(c){
+        return '<button type="button" class="chip'+(c===eCat?" selected":"")+'" data-editcat="'+esc(c)+'" data-note-id="'+n.id+'">'+esc(c)+'</button>';
       }).join("") + '</div>' : '';
+      var subjectChips = '<label>Môn</label><div class="chip-row" style="margin-bottom:8px;">' + SUBJECTS.map(function(s){
+        return '<button type="button" class="chip'+(s===eSubject?" selected":"")+'" data-editsubject="'+esc(s)+'" data-note-id="'+n.id+'">'+esc(s)+'</button>';
+      }).join("") + '</div>';
+      var periodChips = '<label>Tiết</label><div class="chip-row" style="margin-bottom:8px;">' + PERIODS.map(function(p){
+        return '<button type="button" class="chip'+(p===ePeriod?" selected":"")+'" data-editperiod="'+p+'" data-note-id="'+n.id+'">Tiết '+p+'</button>';
+      }).join("") + '</div>';
       return '<div class="edit-form">' +
+        '<label>Ngày</label><div class="field" style="margin-bottom:8px;"><input type="date" class="editDate" value="'+esc(n.occur_date||"")+'"></div>' +
+        subjectChips + periodChips +
+        '<label>Học sinh liên quan</label><div class="field" style="margin-bottom:8px;"><input type="text" class="editStudent" list="studentList" value="'+esc(n.student_name||"")+'"></div>' +
         catChips +
-        '<div class="field" style="margin-bottom:6px;"><input type="text" class="editStudent" list="studentList" value="'+esc(n.student_name||"")+'" placeholder="Học sinh liên quan"></div>' +
-        '<div class="field" style="margin-bottom:6px;"><textarea class="editContent" placeholder="Nội dung">'+esc(n.content)+'</textarea></div>' +
+        '<label>Ghi chú</label><div class="field" style="margin-bottom:8px;"><textarea class="editContent" placeholder="Ghi chú (nếu có)">'+esc(n.content||"")+'</textarea></div>' +
         '<div class="row"><button class="btn primary sm" data-action="save-edit" data-note-id="'+n.id+'">Lưu</button>' +
         '<button class="btn ghost sm" data-action="cancel-edit">Huỷ</button></div>' +
         '<div class="msg" id="editMsg_'+n.id+'"></div>' +
         '</div>';
     }
     return '<div class="note-item">' +
-      '<div class="nt-head">'+esc(n.category)+(n.student_name?(' · '+esc(n.student_name)):'')+'</div>' +
-      '<div class="nt-body">'+esc(n.content)+'</div>' +
-      '<div class="nt-meta">'+esc(n.role_name)+' · '+fmtDateTime(n.created_at)+'</div>' +
+      '<div class="nt-head">'+esc(fmtOccurDate(n.occur_date))+(n.subject?(' · '+esc(n.subject)):'')+(n.period?(' · Tiết '+esc(String(n.period))):'')+'</div>' +
+      '<div class="nt-head" style="margin-top:2px;">'+esc(n.category)+(n.student_name?(' · '+esc(n.student_name)):'')+'</div>' +
+      '<div class="nt-body">'+(n.content?esc(n.content):'<span class="faint">(không có ghi chú)</span>')+'</div>' +
+      '<div class="nt-meta">'+esc(n.role_name)+' · ghi lúc '+fmtDateTime(n.created_at)+'</div>' +
       (canEdit ? '<div class="nt-actions"><button class="btn ghost sm" data-action="edit" data-note-id="'+n.id+'">Sửa</button><button class="btn ghost sm danger" data-action="delete" data-note-id="'+n.id+'">Xoá</button></div>' : '') +
       '</div>';
   }
 
-  function renderGroups(){
-    var allowedNames = scopeGroupNames();
+  // ---- overview: xem cả 4 mục + Khác ----
+  function renderOverview(){
     document.getElementById("groupSections").innerHTML = SECTIONS.map(function(sec){
-      var isAllowed = sec.always || allowedNames.indexOf(sec.name) >= 0;
+      var allowed = isSectionAllowed(sec);
       var notesInGroup = allNotes.filter(function(n){ return sec.cats.indexOf(n.category) >= 0; });
       var listHtml = notesInGroup.length ?
         notesInGroup.map(function(n){ return noteItemHtml(n, session.role.role_id === n.role_id); }).join("") :
         '<div class="empty">Chưa có ghi chú.</div>';
-      var addForm = "";
-      if(isAllowed){
-        var selCat = selectedAddCat[sec.id] || (sec.cats.length===1 ? sec.cats[0] : null);
-        var addCatChips = sec.cats.length > 1 ? '<div class="chip-row" style="margin-bottom:8px;">' + sec.cats.map(function(c){
-          return '<button type="button" class="chip'+(c===selCat?" selected":"")+'" data-addcat="'+esc(c)+'" data-group="'+sec.id+'">'+esc(c)+'</button>';
-        }).join("") + '</div>' : '';
-        addForm = '<div class="add-form">' +
-          addCatChips +
-          '<div class="field" style="margin-bottom:6px;"><input type="text" id="addStudent_'+sec.id+'" list="studentList" placeholder="Học sinh liên quan (nếu có)"></div>' +
-          '<div class="field" style="margin-bottom:6px;"><textarea id="addContent_'+sec.id+'" placeholder="Ghi nội dung…"></textarea></div>' +
-          '<button class="btn primary sm" data-action="add" data-group="'+sec.id+'">Gửi ghi chú</button>' +
-          '<div class="msg" id="addMsg_'+sec.id+'"></div>' +
-          '</div>';
-      }
       return '<div class="grp-card">' +
-        '<div class="grp-head"><h2>'+esc(sec.name)+'</h2>' + (isAllowed?'':'<span class="grp-locked">🔒 Không có quyền ghi</span>') + '</div>' +
-        listHtml + addForm +
-        '</div>';
+        '<div class="grp-head"><h2>'+esc(sec.name)+'</h2>' +
+        (allowed ? '<button class="btn sm" data-action="enter" data-section="'+sec.id+'">+ Ghi nhận</button>' : '<span class="grp-locked">🔒 Không có quyền ghi</span>') +
+        '</div>' + listHtml + '</div>';
     }).join("");
   }
 
+  // ---- trang con theo mục ----
+  function renderDetail(sectionId){
+    var sec = SECTIONS.find(function(s){ return s.id === sectionId; });
+    if(!sec || !isSectionAllowed(sec)){ currentSectionId = null; renderOverview(); return; }
+    var notesInGroup = allNotes.filter(function(n){ return sec.cats.indexOf(n.category) >= 0; });
+    var listHtml = notesInGroup.length ?
+      notesInGroup.map(function(n){ return noteItemHtml(n, session.role.role_id === n.role_id); }).join("") :
+      '<div class="empty">Chưa có ghi chú.</div>';
+
+    var subjectChips = '<label>Môn</label><div class="chip-row" style="margin-bottom:8px;">' + SUBJECTS.map(function(s){
+      return '<button type="button" class="chip'+(s===addDraft.subject?" selected":"")+'" data-addsubject="'+esc(s)+'">'+esc(s)+'</button>';
+    }).join("") + '</div>';
+    var periodChips = '<label>Tiết</label><div class="chip-row" style="margin-bottom:8px;">' + PERIODS.map(function(p){
+      return '<button type="button" class="chip'+(p===addDraft.period?" selected":"")+'" data-addperiod="'+p+'">Tiết '+p+'</button>';
+    }).join("") + '</div>';
+    var catChips = sec.cats.length > 1 ? '<label>Lỗi vi phạm</label><div class="chip-row" style="margin-bottom:8px;">' + sec.cats.map(function(c){
+      return '<button type="button" class="chip'+(c===addDraft.cat?" selected":"")+'" data-addcat="'+esc(c)+'">'+esc(c)+'</button>';
+    }).join("") + '</div>' : '';
+
+    document.getElementById("groupSections").innerHTML =
+      '<button class="btn ghost sm" data-action="back" style="margin-bottom:12px;">← Quay lại</button>' +
+      '<div class="grp-card">' +
+      '<div class="grp-head"><h2>'+esc(sec.name)+'</h2></div>' +
+      '<label>Ngày</label><div class="field" style="margin-bottom:8px;"><input type="date" id="fDate" value="'+toDateInputVal(new Date())+'"></div>' +
+      subjectChips + periodChips +
+      '<label>Học sinh liên quan</label><div class="field" style="margin-bottom:8px;"><input type="text" id="fStudent" list="studentList" placeholder="Gõ hoặc chọn tên học sinh"></div>' +
+      catChips +
+      '<label>Ghi chú</label><div class="field" style="margin-bottom:8px;"><textarea id="fContent" placeholder="Ghi chú thêm (nếu có)"></textarea></div>' +
+      '<button class="btn primary" data-action="add">Ghi nhận</button>' +
+      '<div class="msg" id="addMsg"></div>' +
+      '</div>' +
+      '<h3 style="font-size:0.86rem; margin:16px 0 8px;">Danh sách đã ghi</h3>' +
+      listHtml;
+  }
+
   document.getElementById("groupSections").addEventListener("click", function(e){
-    var addChip = e.target.closest(".chip[data-addcat]");
-    if(addChip){
-      selectedAddCat[addChip.dataset.group] = addChip.dataset.addcat;
-      addChip.parentElement.querySelectorAll(".chip").forEach(function(c){ c.classList.toggle("selected", c===addChip); });
+    var enterBtn = e.target.closest("[data-action='enter']");
+    if(enterBtn){
+      currentSectionId = enterBtn.dataset.section;
+      editingNoteId = null;
+      addDraft = { subject: null, period: null, cat: null };
+      renderScreen();
       return;
     }
-    var editChip = e.target.closest(".chip[data-editcat]");
-    if(editChip){
-      selectedEditCat[editChip.dataset.noteId] = editChip.dataset.editcat;
-      editChip.parentElement.querySelectorAll(".chip").forEach(function(c){ c.classList.toggle("selected", c===editChip); });
+    if(e.target.closest("[data-action='back']")){
+      currentSectionId = null;
+      editingNoteId = null;
+      renderScreen();
       return;
     }
+    var addSubjChip = e.target.closest(".chip[data-addsubject]");
+    if(addSubjChip){
+      addDraft.subject = addSubjChip.dataset.addsubject;
+      addSubjChip.parentElement.querySelectorAll(".chip").forEach(function(c){ c.classList.toggle("selected", c===addSubjChip); });
+      return;
+    }
+    var addPerChip = e.target.closest(".chip[data-addperiod]");
+    if(addPerChip){
+      addDraft.period = Number(addPerChip.dataset.addperiod);
+      addPerChip.parentElement.querySelectorAll(".chip").forEach(function(c){ c.classList.toggle("selected", c===addPerChip); });
+      return;
+    }
+    var addCatChip = e.target.closest(".chip[data-addcat]");
+    if(addCatChip){
+      addDraft.cat = addCatChip.dataset.addcat;
+      addCatChip.parentElement.querySelectorAll(".chip").forEach(function(c){ c.classList.toggle("selected", c===addCatChip); });
+      return;
+    }
+    var editCatChip = e.target.closest(".chip[data-editcat]");
+    if(editCatChip){
+      selectedEditCat[editCatChip.dataset.noteId] = editCatChip.dataset.editcat;
+      editCatChip.parentElement.querySelectorAll(".chip").forEach(function(c){ c.classList.toggle("selected", c===editCatChip); });
+      return;
+    }
+    var editSubjChip = e.target.closest(".chip[data-editsubject]");
+    if(editSubjChip){
+      selectedEditSubject[editSubjChip.dataset.noteId] = editSubjChip.dataset.editsubject;
+      editSubjChip.parentElement.querySelectorAll(".chip").forEach(function(c){ c.classList.toggle("selected", c===editSubjChip); });
+      return;
+    }
+    var editPerChip = e.target.closest(".chip[data-editperiod]");
+    if(editPerChip){
+      selectedEditPeriod[editPerChip.dataset.noteId] = Number(editPerChip.dataset.editperiod);
+      editPerChip.parentElement.querySelectorAll(".chip").forEach(function(c){ c.classList.toggle("selected", c===editPerChip); });
+      return;
+    }
+
     var btn = e.target.closest("[data-action]");
     if(!btn) return;
     var action = btn.dataset.action;
 
     if(action === "add"){
-      var gid = btn.dataset.group;
-      var sec = SECTIONS.find(function(s){ return s.id===gid; });
-      var cat = selectedAddCat[gid] || (sec.cats.length===1 ? sec.cats[0] : null);
-      var student = document.getElementById("addStudent_"+gid).value.trim();
-      var content = document.getElementById("addContent_"+gid).value.trim();
-      var msg = document.getElementById("addMsg_"+gid);
-      if(!cat){ msg.className="msg err"; msg.textContent="Vui lòng chọn loại."; return; }
-      if(!content){ msg.className="msg err"; msg.textContent="Vui lòng nhập nội dung."; return; }
+      var sec = SECTIONS.find(function(s){ return s.id===currentSectionId; });
+      var cat = addDraft.cat || (sec.cats.length===1 ? sec.cats[0] : null);
+      var date = document.getElementById("fDate").value || null;
+      var student = document.getElementById("fStudent").value.trim();
+      var content = document.getElementById("fContent").value.trim();
+      var msg = document.getElementById("addMsg");
+      if(!cat){ msg.className="msg err"; msg.textContent="Vui lòng chọn lỗi vi phạm."; return; }
+      if(!date){ msg.className="msg err"; msg.textContent="Vui lòng chọn ngày."; return; }
+      if(!addDraft.subject){ msg.className="msg err"; msg.textContent="Vui lòng chọn môn."; return; }
+      if(!addDraft.period){ msg.className="msg err"; msg.textContent="Vui lòng chọn tiết."; return; }
       btn.disabled = true;
       msg.className="msg"; msg.textContent="Đang gửi…";
-      rpc("bcs_submit_note", {p_password: session.pw, p_category: cat, p_student_name: student, p_content: content}).then(function(res){
+      rpc("bcs_submit_note", {p_password: session.pw, p_category: cat, p_student_name: student, p_content: content,
+        p_date: date, p_subject: addDraft.subject, p_period: addDraft.period}).then(function(res){
         btn.disabled = false;
         if(res && res.ok){
-          delete selectedAddCat[gid];
+          addDraft = { subject: null, period: null, cat: null };
           loadNotesAndRender();
         } else {
           msg.className="msg err"; msg.textContent="Không gửi được — thử đăng xuất rồi vào lại.";
@@ -482,14 +579,16 @@
 
     if(action === "edit"){
       editingNoteId = btn.dataset.noteId;
-      selectedEditCat = {};
-      renderGroups();
+      delete selectedEditCat[editingNoteId];
+      delete selectedEditSubject[editingNoteId];
+      delete selectedEditPeriod[editingNoteId];
+      renderScreen();
       return;
     }
 
     if(action === "cancel-edit"){
       editingNoteId = null;
-      renderGroups();
+      renderScreen();
       return;
     }
 
@@ -497,14 +596,17 @@
       var id = btn.dataset.noteId;
       var note = allNotes.find(function(n){ return n.id===id; });
       var container = btn.closest(".edit-form");
-      var cat = selectedEditCat[id] || (note ? note.category : null);
+      var cat = (id in selectedEditCat) ? selectedEditCat[id] : (note ? note.category : null);
+      var subject = (id in selectedEditSubject) ? selectedEditSubject[id] : (note ? note.subject : null);
+      var period = (id in selectedEditPeriod) ? selectedEditPeriod[id] : (note ? note.period : null);
+      var date = container.querySelector(".editDate").value || null;
       var student = container.querySelector(".editStudent").value.trim();
       var content = container.querySelector(".editContent").value.trim();
       var msg = document.getElementById("editMsg_"+id);
-      if(!content){ msg.className="msg err"; msg.textContent="Vui lòng nhập nội dung."; return; }
       btn.disabled = true;
       msg.className="msg"; msg.textContent="Đang lưu…";
-      rpc("bcs_update_note", {p_password: session.pw, p_id: id, p_category: cat, p_student_name: student, p_content: content}).then(function(res){
+      rpc("bcs_update_note", {p_password: session.pw, p_id: id, p_category: cat, p_student_name: student, p_content: content,
+        p_date: date, p_subject: subject, p_period: period}).then(function(res){
         btn.disabled = false;
         if(res && res.ok){
           editingNoteId = null;
@@ -536,6 +638,7 @@
     session.pw = null;
     allNotes = [];
     editingNoteId = null;
+    currentSectionId = null;
     showScreen("screenLogin");
   });
 
