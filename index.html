@@ -395,6 +395,8 @@
   var currentCell = null; // null = trang ma trận, else {sectionId, kindId}
   var addDraft = { subject: null, period: null, cat: null };
   var filterState = { date: null, subject: null, period: null }; // lọc trong trang con của 1 ô
+  var baoBaiOpen = false; // trang "Viết báo bài" (chỉ dưới mục Học tập)
+  var baoBaiDate = null;
 
   function scopeGroupNames(){
     var scope = session.role.scope;
@@ -429,6 +431,7 @@
     showScreen("screenSubmit");
     document.getElementById("roleNameLabel").textContent = session.role.role_name;
     currentCell = null;
+    baoBaiOpen = false;
     editingNoteId = null;
     loadNotesAndRender();
   }
@@ -448,7 +451,9 @@
   }
 
   function renderScreen(){
-    if(currentCell) renderCellDetail(currentCell.sectionId, currentCell.kindId); else renderMatrix();
+    if(baoBaiOpen) renderBaoBai();
+    else if(currentCell) renderCellDetail(currentCell.sectionId, currentCell.kindId);
+    else renderMatrix();
   }
 
   function noteRowHtml(n, canEdit){
@@ -530,7 +535,10 @@
 
   // ---- trang tổng thể: bảng ma trận 4 mục x 4 loại nội dung ----
   function renderMatrix(){
-    var headHtml = '<tr><th></th>' + SECTIONS.map(function(sec){ return '<th>'+esc(sec.name)+'</th>'; }).join("") + '</tr>';
+    var headHtml = '<tr><th></th>' + SECTIONS.map(function(sec){
+      var extra = sec.name === "Học tập" ? '<br><button class="btn ghost sm" data-action="open-baobai" style="margin-top:4px;">📖 Viết báo bài</button>' : '';
+      return '<th>'+esc(sec.name)+extra+'</th>';
+    }).join("") + '</tr>';
     var bodyHtml = ROW_KINDS.map(function(row){
       var cells = SECTIONS.map(function(sec){
         var count = notesFor(sec, row.id).length;
@@ -595,8 +603,70 @@
       listHtml;
   }
 
+  // ---- Viết báo bài (chỉ mục Học tập): bảng theo ngày, dòng = môn+tiết ----
+  function baoBaiEditRowHtml(n){
+    var eSubject = (n.id in selectedEditSubject) ? selectedEditSubject[n.id] : n.subject;
+    var ePeriod = (n.id in selectedEditPeriod) ? selectedEditPeriod[n.id] : n.period;
+    var subjectChips = '<label>Môn</label><div class="chip-row" style="margin-bottom:8px;">' + SUBJECTS.map(function(s){
+      return '<button type="button" class="chip'+(s===eSubject?" selected":"")+'" data-editsubject="'+esc(s)+'" data-note-id="'+n.id+'">'+esc(s)+'</button>';
+    }).join("") + '</div>';
+    var periodChips = '<label>Tiết</label><div class="chip-row" style="margin-bottom:8px;">' + PERIODS.map(function(p){
+      return '<button type="button" class="chip'+(p===ePeriod?" selected":"")+'" data-editperiod="'+p+'" data-note-id="'+n.id+'">Tiết '+p+'</button>';
+    }).join("") + '</div>';
+    return '<tr><td colspan="4"><div class="edit-form" data-kind="bao_bai">' +
+      subjectChips + periodChips +
+      '<label>Nội dung</label><div class="field" style="margin-bottom:8px;"><textarea class="editContent">'+esc(n.content||"")+'</textarea></div>' +
+      '<div class="row"><button class="btn primary sm" data-action="save-edit" data-note-id="'+n.id+'">Lưu</button>' +
+      '<button class="btn ghost sm" data-action="cancel-edit">Huỷ</button></div>' +
+      '<div class="msg" id="editMsg_'+n.id+'"></div>' +
+      '</div></td></tr>';
+  }
+
+  function renderBaoBai(){
+    if(!baoBaiDate) baoBaiDate = toDateInputVal(new Date());
+    var entries = allNotes.filter(function(n){ return (n.kind||"vi_pham")==="bao_bai" && n.occur_date===baoBaiDate; })
+      .sort(function(a,b){ return (a.period||0)-(b.period||0); });
+    var rowsHtml = entries.length ? entries.map(function(n){
+      if(editingNoteId === n.id) return baoBaiEditRowHtml(n);
+      var canEdit = session.role.role_id === n.role_id;
+      return '<tr>' +
+        '<td style="white-space:nowrap;">'+(n.subject?esc(n.subject):'—')+'</td>' +
+        '<td style="white-space:nowrap;">'+(n.period?('Tiết '+esc(String(n.period))):'—')+'</td>' +
+        '<td>'+(n.content?esc(n.content):'<span class="faint">—</span>')+'</td>' +
+        '<td style="white-space:nowrap;">'+(canEdit ? '<button class="btn ghost sm" data-action="edit" data-note-id="'+n.id+'">Sửa</button> <button class="btn ghost sm danger" data-action="delete" data-note-id="'+n.id+'">Xoá</button>' : '')+'</td>' +
+        '</tr>';
+    }).join("") : '<tr><td colspan="4" class="empty">Chưa có báo bài cho ngày này.</td></tr>';
+
+    var hocTapSec = SECTIONS.find(function(s){ return s.name === "Học tập"; });
+    var canWrite = hocTapSec && isSectionAllowed(hocTapSec);
+    var formHtml = "";
+    if(canWrite){
+      var subjectChips = '<label>Môn</label><div class="chip-row" style="margin-bottom:8px;">' + SUBJECTS.map(function(s){
+        return '<button type="button" class="chip'+(s===addDraft.subject?" selected":"")+'" data-addsubject="'+esc(s)+'">'+esc(s)+'</button>';
+      }).join("") + '</div>';
+      var periodChips = '<label>Tiết</label><div class="chip-row" style="margin-bottom:8px;">' + PERIODS.map(function(p){
+        return '<button type="button" class="chip'+(p===addDraft.period?" selected":"")+'" data-addperiod="'+p+'">Tiết '+p+'</button>';
+      }).join("") + '</div>';
+      formHtml = subjectChips + periodChips +
+        '<label>Nội dung</label><div class="field" style="margin-bottom:8px;"><textarea id="fContent" placeholder="Nội dung bài học / bài tập được giao…"></textarea></div>' +
+        '<button class="btn primary" data-action="add-baobai">Thêm dòng báo bài</button><div class="msg" id="addMsg"></div>';
+    } else {
+      formHtml = '<div class="empty">Bạn không có quyền ghi báo bài (không phụ trách mục Học tập).</div>';
+    }
+
+    document.getElementById("groupSections").innerHTML =
+      '<button class="btn ghost sm" data-action="back-matrix" style="margin-bottom:12px;">← Quay lại bảng tổng hợp</button>' +
+      '<div class="grp-card">' +
+      '<div class="grp-head"><h2>📖 Viết báo bài</h2></div>' +
+      '<label>Ngày</label><div class="field" style="margin-bottom:8px;"><input type="date" id="bbDate" value="'+baoBaiDate+'"></div>' +
+      formHtml +
+      '</div>' +
+      '<div class="table-wrap"><table><thead><tr><th>Môn</th><th>Tiết</th><th>Nội dung</th><th></th></tr></thead><tbody>'+rowsHtml+'</tbody></table></div>';
+  }
+
   document.getElementById("groupSections").addEventListener("change", function(e){
     var t = e.target;
+    if(t.id === "bbDate"){ baoBaiDate = t.value || toDateInputVal(new Date()); renderScreen(); return; }
     if(t.id === "filterDate"){ filterState.date = t.value || null; renderScreen(); return; }
     if(t.id === "filterSubject"){ filterState.subject = t.value || null; renderScreen(); return; }
     if(t.id === "filterPeriod"){ filterState.period = t.value ? Number(t.value) : null; renderScreen(); return; }
@@ -611,14 +681,24 @@
     var openCellBtn = e.target.closest("[data-action='open-cell']");
     if(openCellBtn){
       currentCell = { sectionId: openCellBtn.dataset.section, kindId: openCellBtn.dataset.kind };
+      baoBaiOpen = false;
       editingNoteId = null;
       addDraft = { subject: null, period: null, cat: null };
       filterState = { date: null, subject: null, period: null };
       renderScreen();
       return;
     }
+    if(e.target.closest("[data-action='open-baobai']")){
+      baoBaiOpen = true;
+      currentCell = null;
+      editingNoteId = null;
+      addDraft = { subject: null, period: null, cat: null };
+      renderScreen();
+      return;
+    }
     if(e.target.closest("[data-action='back-matrix']")){
       currentCell = null;
+      baoBaiOpen = false;
       editingNoteId = null;
       renderScreen();
       return;
@@ -663,6 +743,27 @@
     var btn = e.target.closest("[data-action]");
     if(!btn) return;
     var action = btn.dataset.action;
+
+    if(action === "add-baobai"){
+      var msgBB = document.getElementById("addMsg");
+      var contentBB = document.getElementById("fContent").value.trim();
+      if(!addDraft.subject){ msgBB.className="msg err"; msgBB.textContent="Vui lòng chọn môn."; return; }
+      if(!addDraft.period){ msgBB.className="msg err"; msgBB.textContent="Vui lòng chọn tiết."; return; }
+      if(!contentBB){ msgBB.className="msg err"; msgBB.textContent="Vui lòng nhập nội dung."; return; }
+      btn.disabled = true;
+      msgBB.className="msg"; msgBB.textContent="Đang gửi…";
+      rpc("bcs_submit_note", {p_password: session.pw, p_kind:"bao_bai", p_category:"Học tập", p_content: contentBB,
+        p_date: baoBaiDate, p_subject: addDraft.subject, p_period: addDraft.period}).then(function(res){
+        btn.disabled = false;
+        if(res && res.ok){
+          addDraft = { subject: null, period: null, cat: null };
+          loadNotesAndRender();
+        } else {
+          msgBB.className="msg err"; msgBB.textContent="Không gửi được — thử đăng xuất rồi vào lại.";
+        }
+      }).catch(function(){ btn.disabled=false; msgBB.className="msg err"; msgBB.textContent="Lỗi kết nối — thử lại."; });
+      return;
+    }
 
     if(action === "add"){
       var sec = SECTIONS.find(function(s){ return s.id===currentCell.sectionId; });
@@ -744,6 +845,10 @@
       } else if(kind === "khen_thuong"){
         var studentEl2 = container.querySelector(".editStudent");
         payload.p_student_name = studentEl2 ? studentEl2.value.trim() : "";
+      } else if(kind === "bao_bai"){
+        payload.p_date = note ? note.occur_date : null;
+        payload.p_subject = (id in selectedEditSubject) ? selectedEditSubject[id] : (note ? note.subject : null);
+        payload.p_period = (id in selectedEditPeriod) ? selectedEditPeriod[id] : (note ? note.period : null);
       }
       btn.disabled = true;
       msg.className="msg"; msg.textContent="Đang lưu…";
@@ -780,6 +885,7 @@
     allNotes = [];
     editingNoteId = null;
     currentCell = null;
+    baoBaiOpen = false;
     showScreen("screenLogin");
   });
 
