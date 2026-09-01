@@ -29,11 +29,15 @@
   button{font-family:inherit;}
   #app{max-width:none; width:100%; margin:0 auto; padding:28px 40px 64px; box-sizing:border-box;}
   #screenLogin{max-width:640px; margin:0 auto;}
-  #screenSubmit{max-width:820px; margin:0 auto;}
+  #screenSubmit{max-width:1100px; margin:0 auto;}
   .grp-card{background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:16px 18px; box-shadow:var(--shadow); margin-bottom:14px;}
   .grp-head{display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;}
   .grp-head h2{font-size:0.98rem;}
   .grp-locked{font-size:0.76rem; color:var(--ink-faint); font-weight:600;}
+  .filter-bar{display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end; margin-bottom:14px; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-sm); padding:12px 14px; box-shadow:var(--shadow);}
+  .filter-bar > div{width:150px;}
+  .filter-bar label{margin-bottom:4px;}
+  .filter-bar .btn{white-space:nowrap;}
   .note-item .nt-actions{margin-top:6px; display:flex; gap:6px;}
   .add-form{border-top:1px dashed var(--border); margin-top:10px; padding-top:10px;}
   .edit-form{background:var(--surface-2); border:1px solid var(--border-strong); border-radius:var(--radius-sm); padding:10px; margin-bottom:8px;}
@@ -366,6 +370,7 @@
   // Ngày/Môn/Tiết -> Học sinh -> Lỗi vi phạm -> Ghi chú (tuỳ chọn) -> danh sách bên dưới.
   var currentSectionId = null; // null = overview, else = id trong SECTIONS
   var addDraft = { subject: null, period: null, cat: null };
+  var filterState = { date: null, subject: null, period: null }; // lọc ở trang tổng thể
 
   function scopeGroupNames(){
     var scope = session.role.scope;
@@ -410,54 +415,85 @@
     if(currentSectionId) renderDetail(currentSectionId); else renderOverview();
   }
 
-  function noteItemHtml(n, canEdit){
-    if(editingNoteId === n.id){
-      var sec = sectionOf(n.category);
-      var eCat = (n.id in selectedEditCat) ? selectedEditCat[n.id] : n.category;
-      var eSubject = (n.id in selectedEditSubject) ? selectedEditSubject[n.id] : n.subject;
-      var ePeriod = (n.id in selectedEditPeriod) ? selectedEditPeriod[n.id] : n.period;
-      var catChips = sec.cats.length > 1 ? '<label>Lỗi vi phạm</label><div class="chip-row" style="margin-bottom:8px;">' + sec.cats.map(function(c){
-        return '<button type="button" class="chip'+(c===eCat?" selected":"")+'" data-editcat="'+esc(c)+'" data-note-id="'+n.id+'">'+esc(c)+'</button>';
-      }).join("") + '</div>' : '';
-      var subjectChips = '<label>Môn</label><div class="chip-row" style="margin-bottom:8px;">' + SUBJECTS.map(function(s){
-        return '<button type="button" class="chip'+(s===eSubject?" selected":"")+'" data-editsubject="'+esc(s)+'" data-note-id="'+n.id+'">'+esc(s)+'</button>';
-      }).join("") + '</div>';
-      var periodChips = '<label>Tiết</label><div class="chip-row" style="margin-bottom:8px;">' + PERIODS.map(function(p){
-        return '<button type="button" class="chip'+(p===ePeriod?" selected":"")+'" data-editperiod="'+p+'" data-note-id="'+n.id+'">Tiết '+p+'</button>';
-      }).join("") + '</div>';
-      return '<div class="edit-form">' +
-        '<label>Ngày</label><div class="field" style="margin-bottom:8px;"><input type="date" class="editDate" value="'+esc(n.occur_date||"")+'"></div>' +
-        subjectChips + periodChips +
-        '<label>Học sinh liên quan</label><div class="field" style="margin-bottom:8px;"><input type="text" class="editStudent" list="studentList" value="'+esc(n.student_name||"")+'"></div>' +
-        catChips +
-        '<label>Ghi chú</label><div class="field" style="margin-bottom:8px;"><textarea class="editContent" placeholder="Ghi chú (nếu có)">'+esc(n.content||"")+'</textarea></div>' +
-        '<div class="row"><button class="btn primary sm" data-action="save-edit" data-note-id="'+n.id+'">Lưu</button>' +
-        '<button class="btn ghost sm" data-action="cancel-edit">Huỷ</button></div>' +
-        '<div class="msg" id="editMsg_'+n.id+'"></div>' +
-        '</div>';
-    }
-    return '<div class="note-item">' +
-      '<div class="nt-head">'+esc(fmtOccurDate(n.occur_date))+(n.subject?(' · '+esc(n.subject)):'')+(n.period?(' · Tiết '+esc(String(n.period))):'')+'</div>' +
-      '<div class="nt-head" style="margin-top:2px;">'+esc(n.category)+(n.student_name?(' · '+esc(n.student_name)):'')+'</div>' +
-      '<div class="nt-body">'+(n.content?esc(n.content):'<span class="faint">(không có ghi chú)</span>')+'</div>' +
-      '<div class="nt-meta">'+esc(n.role_name)+' · ghi lúc '+fmtDateTime(n.created_at)+'</div>' +
-      (canEdit ? '<div class="nt-actions"><button class="btn ghost sm" data-action="edit" data-note-id="'+n.id+'">Sửa</button><button class="btn ghost sm danger" data-action="delete" data-note-id="'+n.id+'">Xoá</button></div>' : '') +
+  function noteRowHtml(n, canEdit){
+    return '<tr>' +
+      '<td style="white-space:nowrap;">'+esc(fmtOccurDate(n.occur_date))+'</td>' +
+      '<td style="white-space:nowrap;">'+(n.subject?esc(n.subject):'—')+(n.period?(' · Tiết '+esc(String(n.period))):'')+'</td>' +
+      '<td>'+esc(n.category)+'</td>' +
+      '<td>'+(n.student_name?esc(n.student_name):'—')+'</td>' +
+      '<td>'+(n.content?esc(n.content):'<span class="faint">—</span>')+'</td>' +
+      '<td class="faint" style="white-space:nowrap;">'+esc(n.role_name)+'<br><span style="font-family:var(--font-mono); font-size:0.7rem;">'+fmtDateTime(n.created_at)+'</span></td>' +
+      '<td style="white-space:nowrap;">'+(canEdit ? '<button class="btn ghost sm" data-action="edit" data-note-id="'+n.id+'">Sửa</button> <button class="btn ghost sm danger" data-action="delete" data-note-id="'+n.id+'">Xoá</button>' : '')+'</td>' +
+      '</tr>';
+  }
+
+  function noteEditRowHtml(n){
+    var sec = sectionOf(n.category);
+    var eCat = (n.id in selectedEditCat) ? selectedEditCat[n.id] : n.category;
+    var eSubject = (n.id in selectedEditSubject) ? selectedEditSubject[n.id] : n.subject;
+    var ePeriod = (n.id in selectedEditPeriod) ? selectedEditPeriod[n.id] : n.period;
+    var catChips = sec.cats.length > 1 ? '<label>Lỗi vi phạm</label><div class="chip-row" style="margin-bottom:8px;">' + sec.cats.map(function(c){
+      return '<button type="button" class="chip'+(c===eCat?" selected":"")+'" data-editcat="'+esc(c)+'" data-note-id="'+n.id+'">'+esc(c)+'</button>';
+    }).join("") + '</div>' : '';
+    var subjectChips = '<label>Môn</label><div class="chip-row" style="margin-bottom:8px;">' + SUBJECTS.map(function(s){
+      return '<button type="button" class="chip'+(s===eSubject?" selected":"")+'" data-editsubject="'+esc(s)+'" data-note-id="'+n.id+'">'+esc(s)+'</button>';
+    }).join("") + '</div>';
+    var periodChips = '<label>Tiết</label><div class="chip-row" style="margin-bottom:8px;">' + PERIODS.map(function(p){
+      return '<button type="button" class="chip'+(p===ePeriod?" selected":"")+'" data-editperiod="'+p+'" data-note-id="'+n.id+'">Tiết '+p+'</button>';
+    }).join("") + '</div>';
+    return '<tr><td colspan="7"><div class="edit-form">' +
+      '<label>Ngày</label><div class="field" style="margin-bottom:8px;"><input type="date" class="editDate" value="'+esc(n.occur_date||"")+'"></div>' +
+      subjectChips + periodChips +
+      '<label>Học sinh liên quan</label><div class="field" style="margin-bottom:8px;"><input type="text" class="editStudent" list="studentList" value="'+esc(n.student_name||"")+'"></div>' +
+      catChips +
+      '<label>Ghi chú</label><div class="field" style="margin-bottom:8px;"><textarea class="editContent" placeholder="Ghi chú (nếu có)">'+esc(n.content||"")+'</textarea></div>' +
+      '<div class="row"><button class="btn primary sm" data-action="save-edit" data-note-id="'+n.id+'">Lưu</button>' +
+      '<button class="btn ghost sm" data-action="cancel-edit">Huỷ</button></div>' +
+      '<div class="msg" id="editMsg_'+n.id+'"></div>' +
+      '</div></td></tr>';
+  }
+
+  function notesTableHtml(notes, canEditFn){
+    if(!notes.length) return '<div class="empty">Chưa có ghi chú.</div>';
+    var rows = notes.map(function(n){
+      return editingNoteId === n.id ? noteEditRowHtml(n) : noteRowHtml(n, canEditFn(n));
+    }).join("");
+    return '<div class="table-wrap"><table><thead><tr><th>Ngày</th><th>Môn · Tiết</th><th>Loại</th><th>Học sinh</th><th>Nội dung</th><th>Ghi bởi</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div>';
+  }
+
+  function applyFilter(notes){
+    return notes.filter(function(n){
+      if(filterState.date && n.occur_date !== filterState.date) return false;
+      if(filterState.subject && n.subject !== filterState.subject) return false;
+      if(filterState.period && Number(n.period) !== filterState.period) return false;
+      return true;
+    });
+  }
+
+  function filterBarHtml(){
+    return '<div class="filter-bar">' +
+      '<div><label>Ngày</label><input type="date" id="filterDate" value="'+(filterState.date||"")+'"></div>' +
+      '<div><label>Môn</label><select id="filterSubject"><option value="">Tất cả</option>' +
+        SUBJECTS.map(function(s){ return '<option value="'+esc(s)+'"'+(filterState.subject===s?" selected":"")+'>'+esc(s)+'</option>'; }).join("") +
+      '</select></div>' +
+      '<div><label>Tiết</label><select id="filterPeriod"><option value="">Tất cả</option>' +
+        PERIODS.map(function(p){ return '<option value="'+p+'"'+(filterState.period===p?" selected":"")+'>Tiết '+p+'</option>'; }).join("") +
+      '</select></div>' +
+      '<button class="btn ghost sm" data-action="clear-filter">Xoá lọc</button>' +
       '</div>';
   }
 
-  // ---- overview: xem cả 4 mục + Khác ----
+  // ---- overview: xem cả 4 mục + Khác, dạng bảng ngang, có lọc theo ngày/môn/tiết ----
   function renderOverview(){
-    document.getElementById("groupSections").innerHTML = SECTIONS.map(function(sec){
+    var sectionsHtml = SECTIONS.map(function(sec){
       var allowed = isSectionAllowed(sec);
-      var notesInGroup = allNotes.filter(function(n){ return sec.cats.indexOf(n.category) >= 0; });
-      var listHtml = notesInGroup.length ?
-        notesInGroup.map(function(n){ return noteItemHtml(n, session.role.role_id === n.role_id); }).join("") :
-        '<div class="empty">Chưa có ghi chú.</div>';
+      var notesInGroup = applyFilter(allNotes.filter(function(n){ return sec.cats.indexOf(n.category) >= 0; }));
       return '<div class="grp-card">' +
         '<div class="grp-head"><h2>'+esc(sec.name)+'</h2>' +
         (allowed ? '<button class="btn sm" data-action="enter" data-section="'+sec.id+'">+ Ghi nhận</button>' : '<span class="grp-locked">🔒 Không có quyền ghi</span>') +
-        '</div>' + listHtml + '</div>';
+        '</div>' + notesTableHtml(notesInGroup, function(n){ return session.role.role_id === n.role_id; }) + '</div>';
     }).join("");
+    document.getElementById("groupSections").innerHTML = filterBarHtml() + sectionsHtml;
   }
 
   // ---- trang con theo mục ----
@@ -465,9 +501,7 @@
     var sec = SECTIONS.find(function(s){ return s.id === sectionId; });
     if(!sec || !isSectionAllowed(sec)){ currentSectionId = null; renderOverview(); return; }
     var notesInGroup = allNotes.filter(function(n){ return sec.cats.indexOf(n.category) >= 0; });
-    var listHtml = notesInGroup.length ?
-      notesInGroup.map(function(n){ return noteItemHtml(n, session.role.role_id === n.role_id); }).join("") :
-      '<div class="empty">Chưa có ghi chú.</div>';
+    var listHtml = notesTableHtml(notesInGroup, function(n){ return session.role.role_id === n.role_id; });
 
     var subjectChips = '<label>Môn</label><div class="chip-row" style="margin-bottom:8px;">' + SUBJECTS.map(function(s){
       return '<button type="button" class="chip'+(s===addDraft.subject?" selected":"")+'" data-addsubject="'+esc(s)+'">'+esc(s)+'</button>';
@@ -495,7 +529,19 @@
       listHtml;
   }
 
+  document.getElementById("groupSections").addEventListener("change", function(e){
+    var t = e.target;
+    if(t.id === "filterDate"){ filterState.date = t.value || null; renderOverview(); return; }
+    if(t.id === "filterSubject"){ filterState.subject = t.value || null; renderOverview(); return; }
+    if(t.id === "filterPeriod"){ filterState.period = t.value ? Number(t.value) : null; renderOverview(); return; }
+  });
+
   document.getElementById("groupSections").addEventListener("click", function(e){
+    if(e.target.closest("[data-action='clear-filter']")){
+      filterState = { date: null, subject: null, period: null };
+      renderOverview();
+      return;
+    }
     var enterBtn = e.target.closest("[data-action='enter']");
     if(enterBtn){
       currentSectionId = enterBtn.dataset.section;
