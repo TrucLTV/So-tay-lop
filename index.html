@@ -562,7 +562,7 @@
     var showBaoBaiDetail = sec.name === "Học tập" && kindId === "thong_bao" && !!filterState.date;
     var listHtml;
     if(showBaoBaiDetail){
-      listHtml = baoBaiTableHtml(filterState.date);
+      listHtml = baoBaiTableHtml(filterState.date, false);
     } else {
       var notes = applyFilter(notesFor(sec, kindId));
       listHtml = notesTableHtml(notes, function(n){ return session.role.role_id === n.role_id; });
@@ -628,10 +628,10 @@
       '</div></td></tr>';
   }
 
-  function baoBaiRowsHtml(entries){
+  function baoBaiRowsHtml(entries, allowActions){
     return entries.length ? entries.map(function(n){
-      if(editingNoteId === n.id) return baoBaiEditRowHtml(n);
-      var canEdit = session.role.role_id === n.role_id;
+      if(allowActions && editingNoteId === n.id) return baoBaiEditRowHtml(n);
+      var canEdit = allowActions && session.role.role_id === n.role_id;
       return '<tr>' +
         '<td style="white-space:nowrap;">'+(n.subject?esc(n.subject):'—')+'</td>' +
         '<td style="white-space:nowrap;">'+(n.period?('Tiết '+esc(String(n.period))):'—')+'</td>' +
@@ -646,15 +646,16 @@
       .sort(function(a,b){ return (a.period||0)-(b.period||0); });
   }
 
-  function baoBaiTableHtml(dateStr){
-    return '<div class="table-wrap"><table><thead><tr><th>Môn</th><th>Tiết</th><th>Nội dung</th><th></th></tr></thead><tbody>'+
-      baoBaiRowsHtml(baoBaiEntriesFor(dateStr))+'</tbody></table></div>';
+  function baoBaiTableHtml(dateStr, allowActions){
+    var head = allowActions ? '<th>Môn</th><th>Tiết</th><th>Nội dung</th><th></th>' : '<th>Môn</th><th>Tiết</th><th>Nội dung</th>';
+    return '<div class="table-wrap"><table><thead><tr>'+head+'</tr></thead><tbody>'+
+      baoBaiRowsHtml(baoBaiEntriesFor(dateStr), allowActions)+'</tbody></table></div>';
   }
 
   function renderBaoBai(){
     if(!baoBaiDate) baoBaiDate = toDateInputVal(new Date());
     var entries = baoBaiEntriesFor(baoBaiDate);
-    var rowsHtml = baoBaiRowsHtml(entries);
+    var rowsHtml = baoBaiRowsHtml(entries, true);
 
     var hocTapSec = SECTIONS.find(function(s){ return s.name === "Học tập"; });
     var canWrite = hocTapSec && isSectionAllowed(hocTapSec);
