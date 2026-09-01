@@ -559,8 +559,14 @@
     var sec = SECTIONS.find(function(s){ return s.id === sectionId; });
     var row = ROW_KINDS.find(function(r){ return r.id === kindId; });
     if(!sec || !row){ currentCell = null; renderScreen(); return; }
-    var notes = applyFilter(notesFor(sec, kindId));
-    var listHtml = notesTableHtml(notes, function(n){ return session.role.role_id === n.role_id; });
+    var showBaoBaiDetail = sec.name === "Học tập" && kindId === "thong_bao" && !!filterState.date;
+    var listHtml;
+    if(showBaoBaiDetail){
+      listHtml = baoBaiTableHtml(filterState.date);
+    } else {
+      var notes = applyFilter(notesFor(sec, kindId));
+      listHtml = notesTableHtml(notes, function(n){ return session.role.role_id === n.role_id; });
+    }
     var canWrite = cellWritable(sec, kindId);
 
     var formHtml = "";
@@ -599,7 +605,7 @@
       '<div class="grp-card"><div class="grp-head"><h2>'+esc(sec.name)+' · '+esc(row.name)+'</h2></div>' +
       formHtml +
       '</div>' +
-      '<h3 style="font-size:0.86rem; margin:16px 0 8px;">Danh sách</h3>' +
+      '<h3 style="font-size:0.86rem; margin:16px 0 8px;">'+(showBaoBaiDetail?'Chi tiết báo bài ngày '+esc(fmtOccurDate(filterState.date)):'Danh sách')+'</h3>' +
       listHtml;
   }
 
@@ -622,11 +628,8 @@
       '</div></td></tr>';
   }
 
-  function renderBaoBai(){
-    if(!baoBaiDate) baoBaiDate = toDateInputVal(new Date());
-    var entries = allNotes.filter(function(n){ return (n.kind||"vi_pham")==="bao_bai" && n.occur_date===baoBaiDate; })
-      .sort(function(a,b){ return (a.period||0)-(b.period||0); });
-    var rowsHtml = entries.length ? entries.map(function(n){
+  function baoBaiRowsHtml(entries){
+    return entries.length ? entries.map(function(n){
       if(editingNoteId === n.id) return baoBaiEditRowHtml(n);
       var canEdit = session.role.role_id === n.role_id;
       return '<tr>' +
@@ -636,6 +639,22 @@
         '<td style="white-space:nowrap;">'+(canEdit ? '<button class="btn ghost sm" data-action="edit" data-note-id="'+n.id+'">Sửa</button> <button class="btn ghost sm danger" data-action="delete" data-note-id="'+n.id+'">Xoá</button>' : '')+'</td>' +
         '</tr>';
     }).join("") : '<tr><td colspan="4" class="empty">Chưa có báo bài cho ngày này.</td></tr>';
+  }
+
+  function baoBaiEntriesFor(dateStr){
+    return allNotes.filter(function(n){ return (n.kind||"vi_pham")==="bao_bai" && n.occur_date===dateStr; })
+      .sort(function(a,b){ return (a.period||0)-(b.period||0); });
+  }
+
+  function baoBaiTableHtml(dateStr){
+    return '<div class="table-wrap"><table><thead><tr><th>Môn</th><th>Tiết</th><th>Nội dung</th><th></th></tr></thead><tbody>'+
+      baoBaiRowsHtml(baoBaiEntriesFor(dateStr))+'</tbody></table></div>';
+  }
+
+  function renderBaoBai(){
+    if(!baoBaiDate) baoBaiDate = toDateInputVal(new Date());
+    var entries = baoBaiEntriesFor(baoBaiDate);
+    var rowsHtml = baoBaiRowsHtml(entries);
 
     var hocTapSec = SECTIONS.find(function(s){ return s.name === "Học tập"; });
     var canWrite = hocTapSec && isSectionAllowed(hocTapSec);
