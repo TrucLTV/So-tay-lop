@@ -397,6 +397,7 @@
   var filterState = { date: null, subject: null, period: null }; // lọc trong trang con của 1 ô
   var baoBaiOpen = false; // trang "Viết báo bài" (chỉ dưới mục Học tập)
   var baoBaiDate = null;
+  var expandedThongBaoId = null; // note id đang mở xem chi tiết báo bài (trong Học tập · Thông báo)
 
   function scopeGroupNames(){
     var scope = session.role.scope;
@@ -511,6 +512,27 @@
     return '<div class="table-wrap"><table><thead><tr><th>Ngày</th><th>Môn · Tiết</th><th>Loại</th><th>Học sinh</th><th>Nội dung</th><th>Ghi bởi</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div>';
   }
 
+  // Danh sách "Học tập · Thông báo" (không lọc ngày): thay Sửa/Xoá bằng nút xem chi tiết báo bài
+  function hocTapThongBaoTableHtml(notes){
+    if(!notes.length) return '<div class="empty">Chưa có ghi chú.</div>';
+    var rows = notes.map(function(n){
+      var out = '<tr>' +
+        '<td style="white-space:nowrap;">'+esc(fmtOccurDate(n.occur_date))+'</td>' +
+        '<td style="white-space:nowrap;">—</td>' +
+        '<td>'+esc(n.category)+'</td>' +
+        '<td>—</td>' +
+        '<td>'+(n.content?esc(n.content):'<span class="faint">—</span>')+'</td>' +
+        '<td class="faint" style="white-space:nowrap;">'+esc(n.role_name)+'<br><span style="font-family:var(--font-mono); font-size:0.7rem;">'+fmtDateTime(n.created_at)+'</span></td>' +
+        '<td style="white-space:nowrap;">'+(n.occur_date ? '<button class="btn ghost sm" data-action="toggle-baobai-detail" data-note-id="'+n.id+'">'+(expandedThongBaoId===n.id?'🙈 Ẩn':'👁 Xem chi tiết')+'</button>' : '')+'</td>' +
+        '</tr>';
+      if(expandedThongBaoId === n.id && n.occur_date){
+        out += '<tr><td colspan="7">'+baoBaiTableHtml(n.occur_date, false)+'</td></tr>';
+      }
+      return out;
+    }).join("");
+    return '<div class="table-wrap"><table><thead><tr><th>Ngày</th><th>Môn · Tiết</th><th>Loại</th><th>Học sinh</th><th>Nội dung</th><th>Ghi bởi</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div>';
+  }
+
   function applyFilter(notes){
     return notes.filter(function(n){
       if(filterState.date && n.occur_date !== filterState.date) return false;
@@ -563,6 +585,8 @@
     var listHtml;
     if(showBaoBaiDetail){
       listHtml = baoBaiTableHtml(filterState.date, false);
+    } else if(sec.name === "Học tập" && kindId === "thong_bao"){
+      listHtml = hocTapThongBaoTableHtml(applyFilter(notesFor(sec, kindId)));
     } else {
       var notes = applyFilter(notesFor(sec, kindId));
       listHtml = notesTableHtml(notes, function(n){ return session.role.role_id === n.role_id; });
@@ -706,11 +730,19 @@
       renderScreen();
       return;
     }
+    var toggleBtn = e.target.closest("[data-action='toggle-baobai-detail']");
+    if(toggleBtn){
+      var tid = toggleBtn.dataset.noteId;
+      expandedThongBaoId = (expandedThongBaoId === tid) ? null : tid;
+      renderScreen();
+      return;
+    }
     var openCellBtn = e.target.closest("[data-action='open-cell']");
     if(openCellBtn){
       currentCell = { sectionId: openCellBtn.dataset.section, kindId: openCellBtn.dataset.kind };
       baoBaiOpen = false;
       editingNoteId = null;
+      expandedThongBaoId = null;
       addDraft = { subject: null, period: null, cat: null };
       filterState = { date: null, subject: null, period: null };
       renderScreen();
@@ -720,6 +752,7 @@
       baoBaiOpen = true;
       currentCell = null;
       editingNoteId = null;
+      expandedThongBaoId = null;
       addDraft = { subject: null, period: null, cat: null };
       renderScreen();
       return;
@@ -728,6 +761,7 @@
       currentCell = null;
       baoBaiOpen = false;
       editingNoteId = null;
+      expandedThongBaoId = null;
       renderScreen();
       return;
     }
