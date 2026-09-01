@@ -28,7 +28,15 @@
   h1,h2,h3{font-family:var(--font-display); margin:0; color:var(--ink); font-weight:700;}
   button{font-family:inherit;}
   #app{max-width:none; width:100%; margin:0 auto; padding:28px 40px 64px; box-sizing:border-box;}
-  #screenLogin, #screenSubmit{max-width:640px; margin:0 auto;}
+  #screenLogin{max-width:640px; margin:0 auto;}
+  #screenSubmit{max-width:820px; margin:0 auto;}
+  .grp-card{background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:16px 18px; box-shadow:var(--shadow); margin-bottom:14px;}
+  .grp-head{display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;}
+  .grp-head h2{font-size:0.98rem;}
+  .grp-locked{font-size:0.76rem; color:var(--ink-faint); font-weight:600;}
+  .note-item .nt-actions{margin-top:6px; display:flex; gap:6px;}
+  .add-form{border-top:1px dashed var(--border); margin-top:10px; padding-top:10px;}
+  .edit-form{background:var(--surface-2); border:1px solid var(--border-strong); border-radius:var(--radius-sm); padding:10px; margin-bottom:8px;}
   .brand{display:flex; align-items:baseline; gap:10px; margin-bottom:18px;}
   .brand h1{font-size:1.35rem;}
   .brand .tag{font-family:var(--font-mono); font-size:0.72rem; font-weight:600; color:var(--accent-strong); background:var(--accent-soft); padding:2px 8px; border-radius:100px;}
@@ -119,21 +127,14 @@
   </div>
 
   <!-- ===== BCS SUBMIT SCREEN ===== -->
-  <div class="card" id="screenSubmit" style="display:none;">
-    <div class="row" style="justify-content:space-between; margin-bottom:12px;">
-      <h2>Ghi nhận, <span id="roleNameLabel"></span></h2>
+  <div id="screenSubmit" style="display:none;">
+    <div class="row" style="justify-content:space-between; margin-bottom:14px;">
+      <h2 style="font-size:1.1rem;">Xin chào, <span id="roleNameLabel"></span></h2>
       <button class="btn ghost sm" id="btnLogout">Đăng xuất</button>
     </div>
-    <div class="field"><label>Học sinh liên quan</label>
-      <input type="text" id="noteStudent" list="studentList" placeholder="Gõ hoặc chọn tên học sinh">
-      <datalist id="studentList"></datalist>
-    </div>
-    <label>Loại</label>
-    <div class="chip-row" id="noteCategoryChips"></div>
-    <div class="field"><label>Nội dung</label><textarea id="noteContent" placeholder="Mô tả cụ thể…"></textarea></div>
-    <button class="btn primary" id="btnSubmitNote">Gửi ghi chú</button>
-    <div class="msg" id="submitMsg"></div>
-    <div id="mySubmissions" style="margin-top:16px;"></div>
+    <div class="msg" id="submitTopMsg"></div>
+    <div id="groupSections"></div>
+    <datalist id="studentList"></datalist>
   </div>
 
   <!-- ===== ADMIN (GV) ===== -->
@@ -288,8 +289,12 @@
 
   var session = { role: null }; // {role_id, role_name, scope}
   var adminSession = { password: null };
-  var selectedCategory = null;
-  var mySubs = [];
+  var allNotes = [];
+  var editingNoteId = null;
+  var selectedAddCat = {};  // section id -> category
+  var selectedEditCat = {}; // note id -> category
+  var SECTIONS = CATEGORY_GROUPS.map(function(g, i){ return {name:g.name, cats:g.cats, id:"g"+i, always:false}; });
+  SECTIONS.push({name:"Khác", cats:["Khác"], id:"gKhac", always:true});
 
   // ---- datalist ----
   document.getElementById("studentList").innerHTML = DEFAULT_STUDENTS.map(function(n){ return '<option value="'+esc(n)+'">'; }).join("");
@@ -348,85 +353,191 @@
     });
   }
 
-  // ---- BCS submit screen ----
+  // ---- BCS submit screen (trang tổng thể: xem cả 4 mục, chỉ ghi/sửa/xoá được mục mình phụ trách) ----
+  function scopeGroupNames(){
+    var scope = session.role.scope;
+    if(scope === "all" || !scope) return CATEGORY_GROUPS.map(function(g){ return g.name; });
+    return scope.split(",").map(function(s){ return s.trim(); }).filter(Boolean);
+  }
+
   function showSubmit(){
     showScreen("screenSubmit");
     document.getElementById("roleNameLabel").textContent = session.role.role_name;
-    var scope = session.role.scope;
-    var allowed;
-    if(scope === "all" || !scope){
-      allowed = MASTER_CATEGORIES.slice();
-    } else {
-      var groupNames = scope.split(",").map(function(s){return s.trim();}).filter(Boolean);
-      allowed = [];
-      groupNames.forEach(function(gn){
-        var g = CATEGORY_GROUPS.find(function(x){return x.name===gn;});
-        if(g) allowed = allowed.concat(g.cats);
-      });
-    }
-    if(allowed.indexOf("Khác") === -1) allowed.push("Khác");
-    selectedCategory = null;
-    document.getElementById("noteCategoryChips").innerHTML = allowed.map(function(c){
-      return '<button type="button" class="chip" data-cat="'+esc(c)+'">'+esc(c)+'</button>';
-    }).join("");
-    document.getElementById("noteStudent").value = "";
-    document.getElementById("noteContent").value = "";
-    document.getElementById("submitMsg").textContent = "";
-    mySubs = [];
-    renderMySubs();
+    editingNoteId = null;
+    selectedAddCat = {};
+    selectedEditCat = {};
+    loadNotesAndRender();
   }
 
-  document.getElementById("noteCategoryChips").addEventListener("click", function(e){
-    var chip = e.target.closest(".chip[data-cat]");
-    if(!chip) return;
-    selectedCategory = chip.dataset.cat;
-    document.querySelectorAll("#noteCategoryChips .chip").forEach(function(c){ c.classList.toggle("selected", c.dataset.cat===selectedCategory); });
+  function loadNotesAndRender(){
+    var msg = document.getElementById("submitTopMsg");
+    msg.className = "msg"; msg.textContent = "Đang tải…";
+    rpc("bcs_list_notes", {p_password: session.pw}).then(function(res){
+      if(res && res.ok){
+        allNotes = res.notes || [];
+        msg.textContent = "";
+        renderGroups();
+      } else {
+        msg.className = "msg err"; msg.textContent = "Không tải được dữ liệu — thử đăng xuất rồi vào lại.";
+      }
+    }).catch(function(){ msg.className="msg err"; msg.textContent="Lỗi kết nối — thử lại."; });
+  }
+
+  function sectionOf(category){
+    return SECTIONS.find(function(s){ return s.cats.indexOf(category) >= 0; }) || {cats:[category]};
+  }
+
+  function noteItemHtml(n, canEdit){
+    if(editingNoteId === n.id){
+      var sec = sectionOf(n.category);
+      var editCat = selectedEditCat[n.id] || n.category;
+      var catChips = sec.cats.length > 1 ? '<div class="chip-row" style="margin-bottom:8px;">' + sec.cats.map(function(c){
+        return '<button type="button" class="chip'+(c===editCat?" selected":"")+'" data-editcat="'+esc(c)+'" data-note-id="'+n.id+'">'+esc(c)+'</button>';
+      }).join("") + '</div>' : '';
+      return '<div class="edit-form">' +
+        catChips +
+        '<div class="field" style="margin-bottom:6px;"><input type="text" class="editStudent" list="studentList" value="'+esc(n.student_name||"")+'" placeholder="Học sinh liên quan"></div>' +
+        '<div class="field" style="margin-bottom:6px;"><textarea class="editContent" placeholder="Nội dung">'+esc(n.content)+'</textarea></div>' +
+        '<div class="row"><button class="btn primary sm" data-action="save-edit" data-note-id="'+n.id+'">Lưu</button>' +
+        '<button class="btn ghost sm" data-action="cancel-edit">Huỷ</button></div>' +
+        '<div class="msg" id="editMsg_'+n.id+'"></div>' +
+        '</div>';
+    }
+    return '<div class="note-item">' +
+      '<div class="nt-head">'+esc(n.category)+(n.student_name?(' · '+esc(n.student_name)):'')+'</div>' +
+      '<div class="nt-body">'+esc(n.content)+'</div>' +
+      '<div class="nt-meta">'+esc(n.role_name)+' · '+fmtDateTime(n.created_at)+'</div>' +
+      (canEdit ? '<div class="nt-actions"><button class="btn ghost sm" data-action="edit" data-note-id="'+n.id+'">Sửa</button><button class="btn ghost sm danger" data-action="delete" data-note-id="'+n.id+'">Xoá</button></div>' : '') +
+      '</div>';
+  }
+
+  function renderGroups(){
+    var allowedNames = scopeGroupNames();
+    document.getElementById("groupSections").innerHTML = SECTIONS.map(function(sec){
+      var isAllowed = sec.always || allowedNames.indexOf(sec.name) >= 0;
+      var notesInGroup = allNotes.filter(function(n){ return sec.cats.indexOf(n.category) >= 0; });
+      var listHtml = notesInGroup.length ?
+        notesInGroup.map(function(n){ return noteItemHtml(n, session.role.role_id === n.role_id); }).join("") :
+        '<div class="empty">Chưa có ghi chú.</div>';
+      var addForm = "";
+      if(isAllowed){
+        var selCat = selectedAddCat[sec.id] || (sec.cats.length===1 ? sec.cats[0] : null);
+        var addCatChips = sec.cats.length > 1 ? '<div class="chip-row" style="margin-bottom:8px;">' + sec.cats.map(function(c){
+          return '<button type="button" class="chip'+(c===selCat?" selected":"")+'" data-addcat="'+esc(c)+'" data-group="'+sec.id+'">'+esc(c)+'</button>';
+        }).join("") + '</div>' : '';
+        addForm = '<div class="add-form">' +
+          addCatChips +
+          '<div class="field" style="margin-bottom:6px;"><input type="text" id="addStudent_'+sec.id+'" list="studentList" placeholder="Học sinh liên quan (nếu có)"></div>' +
+          '<div class="field" style="margin-bottom:6px;"><textarea id="addContent_'+sec.id+'" placeholder="Ghi nội dung…"></textarea></div>' +
+          '<button class="btn primary sm" data-action="add" data-group="'+sec.id+'">Gửi ghi chú</button>' +
+          '<div class="msg" id="addMsg_'+sec.id+'"></div>' +
+          '</div>';
+      }
+      return '<div class="grp-card">' +
+        '<div class="grp-head"><h2>'+esc(sec.name)+'</h2>' + (isAllowed?'':'<span class="grp-locked">🔒 Không có quyền ghi</span>') + '</div>' +
+        listHtml + addForm +
+        '</div>';
+    }).join("");
+  }
+
+  document.getElementById("groupSections").addEventListener("click", function(e){
+    var addChip = e.target.closest(".chip[data-addcat]");
+    if(addChip){
+      selectedAddCat[addChip.dataset.group] = addChip.dataset.addcat;
+      addChip.parentElement.querySelectorAll(".chip").forEach(function(c){ c.classList.toggle("selected", c===addChip); });
+      return;
+    }
+    var editChip = e.target.closest(".chip[data-editcat]");
+    if(editChip){
+      selectedEditCat[editChip.dataset.noteId] = editChip.dataset.editcat;
+      editChip.parentElement.querySelectorAll(".chip").forEach(function(c){ c.classList.toggle("selected", c===editChip); });
+      return;
+    }
+    var btn = e.target.closest("[data-action]");
+    if(!btn) return;
+    var action = btn.dataset.action;
+
+    if(action === "add"){
+      var gid = btn.dataset.group;
+      var sec = SECTIONS.find(function(s){ return s.id===gid; });
+      var cat = selectedAddCat[gid] || (sec.cats.length===1 ? sec.cats[0] : null);
+      var student = document.getElementById("addStudent_"+gid).value.trim();
+      var content = document.getElementById("addContent_"+gid).value.trim();
+      var msg = document.getElementById("addMsg_"+gid);
+      if(!cat){ msg.className="msg err"; msg.textContent="Vui lòng chọn loại."; return; }
+      if(!content){ msg.className="msg err"; msg.textContent="Vui lòng nhập nội dung."; return; }
+      btn.disabled = true;
+      msg.className="msg"; msg.textContent="Đang gửi…";
+      rpc("bcs_submit_note", {p_password: session.pw, p_category: cat, p_student_name: student, p_content: content}).then(function(res){
+        btn.disabled = false;
+        if(res && res.ok){
+          delete selectedAddCat[gid];
+          loadNotesAndRender();
+        } else {
+          msg.className="msg err"; msg.textContent="Không gửi được — thử đăng xuất rồi vào lại.";
+        }
+      }).catch(function(){ btn.disabled=false; msg.className="msg err"; msg.textContent="Lỗi kết nối — thử lại."; });
+      return;
+    }
+
+    if(action === "edit"){
+      editingNoteId = btn.dataset.noteId;
+      selectedEditCat = {};
+      renderGroups();
+      return;
+    }
+
+    if(action === "cancel-edit"){
+      editingNoteId = null;
+      renderGroups();
+      return;
+    }
+
+    if(action === "save-edit"){
+      var id = btn.dataset.noteId;
+      var note = allNotes.find(function(n){ return n.id===id; });
+      var container = btn.closest(".edit-form");
+      var cat = selectedEditCat[id] || (note ? note.category : null);
+      var student = container.querySelector(".editStudent").value.trim();
+      var content = container.querySelector(".editContent").value.trim();
+      var msg = document.getElementById("editMsg_"+id);
+      if(!content){ msg.className="msg err"; msg.textContent="Vui lòng nhập nội dung."; return; }
+      btn.disabled = true;
+      msg.className="msg"; msg.textContent="Đang lưu…";
+      rpc("bcs_update_note", {p_password: session.pw, p_id: id, p_category: cat, p_student_name: student, p_content: content}).then(function(res){
+        btn.disabled = false;
+        if(res && res.ok){
+          editingNoteId = null;
+          loadNotesAndRender();
+        } else {
+          msg.className="msg err"; msg.textContent="Không lưu được (có thể ghi chú không phải của bạn).";
+        }
+      }).catch(function(){ btn.disabled=false; msg.className="msg err"; msg.textContent="Lỗi kết nối — thử lại."; });
+      return;
+    }
+
+    if(action === "delete"){
+      var delId = btn.dataset.noteId;
+      if(!confirm("Xoá ghi chú này?")) return;
+      btn.disabled = true;
+      rpc("bcs_delete_note", {p_password: session.pw, p_id: delId}).then(function(res){
+        if(res && res.ok){
+          loadNotesAndRender();
+        } else {
+          btn.disabled = false;
+          alert("Không xoá được (có thể ghi chú không phải của bạn).");
+        }
+      }).catch(function(){ btn.disabled=false; alert("Lỗi kết nối — thử lại."); });
+    }
   });
 
   document.getElementById("btnLogout").addEventListener("click", function(){
     session.role = null;
+    session.pw = null;
+    allNotes = [];
+    editingNoteId = null;
     showScreen("screenLogin");
   });
-
-  document.getElementById("btnSubmitNote").addEventListener("click", function(){
-    var msg = document.getElementById("submitMsg");
-    var content = document.getElementById("noteContent").value.trim();
-    var student = document.getElementById("noteStudent").value.trim();
-    if(!selectedCategory){ msg.className="msg err"; msg.textContent="Vui lòng chọn loại."; return; }
-    if(!content){ msg.className="msg err"; msg.textContent="Vui lòng nhập nội dung."; return; }
-    var btn = document.getElementById("btnSubmitNote");
-    btn.disabled = true;
-    msg.className = "msg"; msg.textContent = "Đang gửi…";
-    // we don't keep the plain password in memory after login, so re-prompt isn't needed:
-    // session carries no password — submit re-uses the password the user just typed at login only once.
-    // To keep it simple & since students may submit many notes in one sitting, we cache it in-memory (not persisted).
-    rpc("bcs_submit_note", {p_password: session.pw, p_category: selectedCategory, p_student_name: student, p_content: content})
-      .then(function(res){
-        btn.disabled = false;
-        if(res && res.ok){
-          msg.className = "msg ok"; msg.textContent = "✓ Đã gửi lúc " + fmtDateTime(res.created_at);
-          mySubs.unshift({category:selectedCategory, student:student, content:content, ts:res.created_at});
-          renderMySubs();
-          document.getElementById("noteContent").value = "";
-          document.getElementById("noteStudent").value = "";
-          selectedCategory = null;
-          document.querySelectorAll("#noteCategoryChips .chip").forEach(function(c){ c.classList.remove("selected"); });
-        } else {
-          msg.className = "msg err"; msg.textContent = "Không gửi được — phiên đăng nhập có thể đã hết hạn, thử đăng xuất rồi vào lại.";
-        }
-      }).catch(function(){ btn.disabled=false; msg.className="msg err"; msg.textContent="Lỗi kết nối — thử lại."; });
-  });
-
-  function renderMySubs(){
-    var el = document.getElementById("mySubmissions");
-    if(!mySubs.length){ el.innerHTML = ""; return; }
-    el.innerHTML = '<h3 style="font-size:0.86rem; margin-bottom:8px;">Đã gửi trong phiên này</h3>' +
-      mySubs.map(function(n){
-        return '<div class="note-item"><div class="nt-head">'+esc(n.category)+(n.student?(' · '+esc(n.student)):'')+'</div>'+
-          '<div class="nt-body">'+esc(n.content)+'</div>'+
-          '<div class="nt-meta">'+fmtDateTime(n.ts)+'</div></div>';
-      }).join("");
-  }
 
   // ---- ADMIN ----
   function showAdmin(){
