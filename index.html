@@ -217,6 +217,13 @@
             <thead><tr><th>Thời gian</th><th>Vai trò</th><th>Loại</th><th>Học sinh</th><th>Nội dung</th><th></th></tr></thead>
             <tbody id="summaryTbody"></tbody>
           </table></div>
+          <div class="card" style="margin-top:14px; background:var(--surface-2);">
+            <h2 style="font-size:0.94rem;">Nhận xét riêng cho học sinh <span class="faint" style="font-weight:500;">(chỉ GV xem, để tổng hợp hồ sơ)</span></h2>
+            <div class="field"><textarea id="studentNoteContent" placeholder="Ghi nhận xét riêng về học sinh này…"></textarea></div>
+            <button class="btn primary" id="btnSendStudentNote" style="width:auto;">Gửi nhận xét</button>
+            <div class="msg" id="studentNoteMsg"></div>
+            <div id="studentNoteList" style="margin-top:12px;"></div>
+          </div>
         </div>
       </div>
       <div class="card">
@@ -1215,7 +1222,8 @@
   }
 
   function renderSummary(notes){
-    currentSummaryNotes = notes;
+    currentSummaryNotes = notes.filter(function(n){ return (n.kind||"vi_pham") !== "nhan_xet_ca_nhan"; });
+    notes = currentSummaryNotes;
     summaryStudentFilter = null;
     document.getElementById("summaryStatsCard").style.display = "";
     var byCat = {}, byStudent = {};
@@ -1242,14 +1250,14 @@
     var max = 0;
     roster.forEach(function(n){ if((byStudent[n]||0) > max) max = byStudent[n]; });
 
-    document.getElementById("summaryByStudent").innerHTML = roster.map(function(name){
+    document.getElementById("summaryByStudent").innerHTML = roster.map(function(name, idx){
       var cnt = byStudent[name] || 0;
       var t = max > 0 ? cnt / max : 0;
       var bg = cnt === 0 ? "" : "background:"+redShade(t)+";";
       var textColor = t > 0.55 ? "color:#fff;" : "";
       var cls = "student-cell" + (cnt===0 ? " zero" : "") + (summaryStudentFilter===name ? " selected" : "");
       return '<button type="button" class="'+cls+'" style="'+bg+textColor+'" data-student="'+esc(name)+'">'+
-        esc(name) + (cnt>0 ? '<span class="cnt">'+cnt+' vi phạm</span>' : '') +
+        (idx+1)+'. '+esc(name) + (cnt>0 ? '<span class="cnt">'+cnt+' vi phạm</span>' : '') +
         '</button>';
     }).join("");
   }
@@ -1281,6 +1289,7 @@
     }
     section.style.display = "";
     document.getElementById("summaryStudentFilterName").textContent = summaryStudentFilter;
+    loadStudentNotes(summaryStudentFilter);
     var notes = currentSummaryNotes.filter(function(n){ return n.student_name === summaryStudentFilter; });
     document.getElementById("summaryTbody").innerHTML = notes.length ? notes.map(function(n){
       return '<tr><td class="faint" style="white-space:nowrap;">'+fmtDateTime(n.created_at)+'</td>'+
@@ -1296,6 +1305,49 @@
     rpc("bcs_admin_delete_note", {p_admin_password: adminSession.password, p_id: b.dataset.delnote}).then(function(res){
       if(res && res.ok){ document.getElementById("btnLoadSummary").click(); } else { alert("Không xoá được."); }
     });
+  });
+
+  // ---- nhận xét riêng cho từng học sinh (chỉ GV xem) ----
+  function loadStudentNotes(name){
+    var el = document.getElementById("studentNoteList");
+    el.innerHTML = '<div class="empty">Đang tải…</div>';
+    rpc("bcs_admin_get_student_notes", {p_admin_password: adminSession.password, p_student_name: name}).then(function(res){
+      if(!res || !res.ok){ el.innerHTML = '<div class="empty">Không tải được.</div>'; return; }
+      var list = res.notes || [];
+      el.innerHTML = list.length ? list.map(function(n){
+        return '<div class="note-item"><div class="nt-body">'+esc(n.content)+'</div>'+
+          '<div class="nt-meta">'+fmtDateTime(n.created_at)+' <button class="btn ghost sm danger" data-delstudentnote="'+n.id+'" style="margin-left:8px;">Xoá</button></div></div>';
+      }).join("") : '<div class="empty">Chưa có nhận xét riêng nào.</div>';
+    }).catch(function(){ el.innerHTML = '<div class="empty">Lỗi kết nối.</div>'; });
+  }
+
+  document.getElementById("studentNoteList").addEventListener("click", function(e){
+    var b = e.target.closest("[data-delstudentnote]");
+    if(!b) return;
+    if(!confirm("Xoá nhận xét này?")) return;
+    rpc("bcs_admin_delete_note", {p_admin_password: adminSession.password, p_id: b.dataset.delstudentnote}).then(function(res){
+      if(res && res.ok){ loadStudentNotes(summaryStudentFilter); } else { alert("Không xoá được."); }
+    });
+  });
+
+  document.getElementById("btnSendStudentNote").addEventListener("click", function(){
+    var msg = document.getElementById("studentNoteMsg");
+    var content = document.getElementById("studentNoteContent").value.trim();
+    if(!summaryStudentFilter){ msg.className="msg err"; msg.textContent="Chưa chọn học sinh."; return; }
+    if(!content){ msg.className="msg err"; msg.textContent="Vui lòng nhập nội dung."; return; }
+    var btn = document.getElementById("btnSendStudentNote");
+    btn.disabled = true;
+    msg.className="msg"; msg.textContent="Đang gửi…";
+    rpc("bcs_admin_submit_student_note", {p_admin_password: adminSession.password, p_student_name: summaryStudentFilter, p_content: content}).then(function(res){
+      btn.disabled = false;
+      if(res && res.ok){
+        msg.className="msg ok"; msg.textContent="✓ Đã gửi.";
+        document.getElementById("studentNoteContent").value = "";
+        loadStudentNotes(summaryStudentFilter);
+      } else {
+        msg.className="msg err"; msg.textContent="Không gửi được.";
+      }
+    }).catch(function(){ btn.disabled=false; msg.className="msg err"; msg.textContent="Lỗi kết nối."; });
   });
 
   // ---- account ----
