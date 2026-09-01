@@ -654,6 +654,13 @@
       formHtml = '<div class="empty">Bạn không có quyền ghi báo bài (không phụ trách mục Học tập).</div>';
     }
 
+    var finishHtml = "";
+    if(canWrite && entries.length){
+      finishHtml = '<button class="btn primary" data-action="finish-baobai" style="margin-top:10px;">✓ Kết thúc — đăng thông báo</button>' +
+        '<div class="msg" id="finishMsg"></div>' +
+        '<p class="hint">Gộp toàn bộ báo bài ngày này thành 1 thông báo, đăng vào ô "Học tập · Thông báo" để mọi người xem chung.</p>';
+    }
+
     document.getElementById("groupSections").innerHTML =
       '<button class="btn ghost sm" data-action="back-matrix" style="margin-bottom:12px;">← Quay lại bảng tổng hợp</button>' +
       '<div class="grp-card">' +
@@ -661,7 +668,8 @@
       '<label>Ngày</label><div class="field" style="margin-bottom:8px;"><input type="date" id="bbDate" value="'+baoBaiDate+'"></div>' +
       formHtml +
       '</div>' +
-      '<div class="table-wrap"><table><thead><tr><th>Môn</th><th>Tiết</th><th>Nội dung</th><th></th></tr></thead><tbody>'+rowsHtml+'</tbody></table></div>';
+      '<div class="table-wrap"><table><thead><tr><th>Môn</th><th>Tiết</th><th>Nội dung</th><th></th></tr></thead><tbody>'+rowsHtml+'</tbody></table></div>' +
+      finishHtml;
   }
 
   document.getElementById("groupSections").addEventListener("change", function(e){
@@ -743,6 +751,28 @@
     var btn = e.target.closest("[data-action]");
     if(!btn) return;
     var action = btn.dataset.action;
+
+    if(action === "finish-baobai"){
+      var bbEntries = allNotes.filter(function(n){ return (n.kind||"vi_pham")==="bao_bai" && n.occur_date===baoBaiDate; })
+        .sort(function(a,b){ return (a.period||0)-(b.period||0); });
+      var msgF = document.getElementById("finishMsg");
+      if(!bbEntries.length){ msgF.className="msg err"; msgF.textContent="Chưa có dòng báo bài nào."; return; }
+      var lines = bbEntries.map(function(n){
+        return "- Tiết "+(n.period||"?")+" ("+(n.subject||"?")+"): "+(n.content||"");
+      });
+      var summary = "Báo bài ngày "+fmtOccurDate(baoBaiDate)+":\n"+lines.join("\n");
+      btn.disabled = true;
+      msgF.className="msg"; msgF.textContent="Đang đăng…";
+      rpc("bcs_submit_note", {p_password: session.pw, p_kind:"thong_bao", p_category:"Học tập", p_content: summary, p_student_name: ""}).then(function(res){
+        btn.disabled = false;
+        if(res && res.ok){
+          loadNotesAndRender();
+        } else {
+          msgF.className="msg err"; msgF.textContent="Không đăng được — thử lại.";
+        }
+      }).catch(function(){ btn.disabled=false; msgF.className="msg err"; msgF.textContent="Lỗi kết nối — thử lại."; });
+      return;
+    }
 
     if(action === "add-baobai"){
       var msgBB = document.getElementById("addMsg");
