@@ -38,6 +38,8 @@
   .filter-bar > div{width:150px;}
   .filter-bar label{margin-bottom:4px;}
   .filter-bar .btn{white-space:nowrap;}
+  .sections-grid{display:grid; grid-template-columns:repeat(auto-fit, minmax(460px, 1fr)); gap:16px; align-items:start;}
+  .sections-grid .grp-card{margin-bottom:0;}
   .note-item .nt-actions{margin-top:6px; display:flex; gap:6px;}
   .add-form{border-top:1px dashed var(--border); margin-top:10px; padding-top:10px;}
   .edit-form{background:var(--surface-2); border:1px solid var(--border-strong); border-radius:var(--radius-sm); padding:10px; margin-bottom:8px;}
@@ -493,7 +495,7 @@
         (allowed ? '<button class="btn sm" data-action="enter" data-section="'+sec.id+'">+ Ghi nhận</button>' : '<span class="grp-locked">🔒 Không có quyền ghi</span>') +
         '</div>' + notesTableHtml(notesInGroup, function(n){ return session.role.role_id === n.role_id; }) + '</div>';
     }).join("");
-    document.getElementById("groupSections").innerHTML = filterBarHtml() + sectionsHtml;
+    document.getElementById("groupSections").innerHTML = filterBarHtml() + '<div class="sections-grid">' + sectionsHtml + '</div>';
   }
 
   // ---- trang con theo mục ----
