@@ -190,6 +190,7 @@
     <div id="sub-summary" style="display:none;">
       <div class="card">
         <h2>Khoảng thời gian</h2>
+        <div class="field"><label>Tuần</label><select id="sumWeek"></select></div>
         <div class="field-row">
           <div class="field"><label>Từ ngày</label><input type="date" id="sumStart"></div>
           <div class="field"><label>Đến ngày</label><input type="date" id="sumEnd"></div>
@@ -261,6 +262,43 @@
 
   var SUPABASE_URL = "https://ymigcanzzfmdumkiocnx.supabase.co";
   var ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InltaWdjYW56emZtZHVta2lvY254Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc0Mzk0NzcsImV4cCI6MjEwMzAxNTQ3N30.1DrDGCNJl0-halAzeiparJZS7KW7H7HrVRlFGIgV_4A";
+
+  // ---- Lịch tuần năm học 2026-2027 (theo lịch tuần trường THCS Hồng Bàng) ----
+  // Tuần 1 bắt đầu Thứ 2 07/09/2026. Có khoảng nghỉ Tết 2 tuần không đánh số giữa tuần 21 và 22.
+  var SCHOOL_WEEK_ANCHOR = "2026-09-07";
+  var SCHOOL_WEEK_MAX = 36;
+  var SCHOOL_WEEK_LABELS = {
+    0: "Chuẩn bị & bắt đầu năm học",
+    9: "Dự kiến KTGK1",
+    14: "KTCK1 (môn không tập trung)",
+    16: "Dự kiến KTCK1 (môn tập trung)",
+    18: "Kết thúc HK1",
+    21: "Trước nghỉ Tết",
+    22: "Sau nghỉ Tết",
+    25: "Dự kiến KTGK2",
+    30: "KTCK2 (môn không tập trung)",
+    32: "Dự kiến KTCK2 (môn tập trung)",
+    35: "Hoàn tất chương trình học",
+    36: "Tổng kết, kết thúc năm học"
+  };
+  function schoolWeekStart(w){
+    var gap = w >= 22 ? 2 : 0; // 2 tuần nghỉ Tết không đánh số
+    var d = new Date(SCHOOL_WEEK_ANCHOR + "T00:00:00");
+    d.setDate(d.getDate() + (w - 1 + gap) * 7);
+    return d;
+  }
+  function schoolWeekRange(w){
+    var s = schoolWeekStart(w);
+    var e = new Date(s); e.setDate(e.getDate() + 6);
+    return { start: s, end: e };
+  }
+  function currentSchoolWeek(){
+    var today = new Date(); today.setHours(0,0,0,0);
+    for(var w = SCHOOL_WEEK_MAX; w >= 0; w--){
+      if(today >= schoolWeekRange(w).start) return w;
+    }
+    return 0;
+  }
 
   var MASTER_CATEGORIES = [
     "Nói chuyện riêng / mất trật tự",
@@ -984,15 +1022,46 @@
   });
 
   // ---- ADMIN ----
+  function renderWeekOptions(){
+    var sel = document.getElementById("sumWeek");
+    var cur = currentSchoolWeek();
+    var opts = [];
+    for(var w = 0; w <= SCHOOL_WEEK_MAX; w++){
+      var r = schoolWeekRange(w);
+      var label = "Tuần " + w + " (" + toDateInputVal(r.start).split("-").reverse().join("/") + " - " + toDateInputVal(r.end).split("-").reverse().join("/") + ")";
+      if(SCHOOL_WEEK_LABELS[w]) label += " — " + SCHOOL_WEEK_LABELS[w];
+      opts.push('<option value="'+w+'"'+(w===cur?" selected":"")+'>'+esc(label)+'</option>');
+    }
+    opts.push('<option value="custom">Tuỳ chỉnh (chọn ngày thủ công)</option>');
+    sel.innerHTML = opts.join("");
+  }
+
+  function applyWeekToDates(w){
+    var r = schoolWeekRange(Number(w));
+    document.getElementById("sumStart").value = toDateInputVal(r.start);
+    document.getElementById("sumEnd").value = toDateInputVal(r.end);
+  }
+
+  document.getElementById("sumWeek").addEventListener("change", function(){
+    var w = this.value;
+    if(w === "custom") return;
+    applyWeekToDates(w);
+    loadSummary();
+  });
+  ["sumStart","sumEnd"].forEach(function(id){
+    document.getElementById(id).addEventListener("input", function(){
+      document.getElementById("sumWeek").value = "custom";
+    });
+  });
+
   function showAdmin(){
     showScreen("screenAdmin");
     switchAdminSub("roles");
     loadRoles();
-    var mon = mondayOf(new Date());
-    var sun = new Date(mon); sun.setDate(mon.getDate()+6);
-    document.getElementById("sumStart").value = toDateInputVal(mon);
-    document.getElementById("sumEnd").value = toDateInputVal(sun);
+    renderWeekOptions();
+    applyWeekToDates(currentSchoolWeek());
     loadRemarks();
+    loadSummary();
   }
   document.getElementById("btnAdminLogout").addEventListener("click", function(){
     adminSession.password = null;
@@ -1237,7 +1306,7 @@
   });
 
   // ---- summary ----
-  document.getElementById("btnLoadSummary").addEventListener("click", function(){
+  function loadSummary(){
     var msg = document.getElementById("summaryMsg");
     var startVal = document.getElementById("sumStart").value;
     var endVal = document.getElementById("sumEnd").value;
@@ -1250,7 +1319,8 @@
       msg.textContent = "";
       renderSummary(res.notes || []);
     }).catch(function(){ msg.className="msg err"; msg.textContent="Lỗi kết nối."; });
-  });
+  }
+  document.getElementById("btnLoadSummary").addEventListener("click", loadSummary);
 
   var currentSummaryNotes = [];
   var summaryStudentFilter = null;
