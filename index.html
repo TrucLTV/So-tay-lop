@@ -233,7 +233,7 @@
             <span class="faint">Đang xem chi tiết của: <strong id="summaryStudentFilterName"></strong></span>
             <button class="btn ghost sm" id="btnClearStudentFilter">Đóng</button>
           </div>
-          <h3 style="margin-bottom:8px; font-size:0.9rem; margin-top:14px;">Chi tiết</h3>
+          <h3 id="summaryDetailHeading" style="margin-bottom:8px; font-size:0.9rem; margin-top:14px;">Chi tiết</h3>
           <div class="table-wrap"><table>
             <thead><tr><th>Thời gian</th><th>Vai trò</th><th>Loại</th><th>Học sinh</th><th>Nội dung</th><th></th></tr></thead>
             <tbody id="summaryTbody"></tbody>
@@ -1475,20 +1475,27 @@
 
   function renderSummaryDetailTable(){
     var section = document.getElementById("summaryDetailSection");
-    if(!summaryStudentFilter){
-      section.style.display = "none";
-      updateRemarkStudentHint();
-      return;
-    }
     section.style.display = "";
-    document.getElementById("summaryStudentFilterName").textContent = summaryStudentFilter;
     updateRemarkStudentHint();
-    var notes = currentSummaryNotes.filter(function(n){ return n.student_name === summaryStudentFilter; });
+    var notes, heading;
+    if(summaryStudentFilter){
+      document.getElementById("summaryStudentFilterName").textContent = summaryStudentFilter;
+      document.getElementById("summaryStudentFilterRow").style.display = "";
+      document.getElementById("btnOpenStudentProfile").style.display = "";
+      notes = currentSummaryNotes.filter(function(n){ return n.student_name === summaryStudentFilter; });
+      heading = "Chi tiết — " + summaryStudentFilter;
+    } else {
+      document.getElementById("summaryStudentFilterRow").style.display = "none";
+      document.getElementById("btnOpenStudentProfile").style.display = "none";
+      notes = currentSummaryNotes.slice().sort(function(a,b){ return new Date(b.created_at) - new Date(a.created_at); });
+      heading = "Chi tiết — tất cả (theo khoảng thời gian đang lọc)";
+    }
+    document.getElementById("summaryDetailHeading").textContent = heading;
     document.getElementById("summaryTbody").innerHTML = notes.length ? notes.map(function(n){
       return '<tr><td class="faint" style="white-space:nowrap;">'+fmtDateTime(n.created_at)+'</td>'+
         '<td>'+esc(n.role_name)+'</td><td>'+esc(n.category)+'</td><td>'+esc(n.student_name||"—")+'</td>'+
-        '<td>'+esc(n.content)+'</td><td><button class="btn ghost sm" data-delnote="'+n.id+'">✕</button></td></tr>';
-    }).join("") : '<tr><td colspan="6" class="empty">Học sinh này chưa có ghi chú.</td></tr>';
+        '<td>'+(n.content?esc(n.content):'<span class="faint">—</span>')+'</td><td><button class="btn ghost sm" data-delnote="'+n.id+'">✕</button></td></tr>';
+    }).join("") : '<tr><td colspan="6" class="empty">Chưa có ghi chú nào.</td></tr>';
   }
 
   document.getElementById("summaryTbody").addEventListener("click", function(e){
