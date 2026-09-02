@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com/">
 <link rel="preconnect" href="https://fonts.gstatic.com/" crossorigin="">
 <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@500;600;700;800&family=Sarabun:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
 <style>
   :root{
     --bg:#F6F5F1; --surface:#FFFFFF; --surface-2:#EEEBE3; --surface-3:#E4E0D5;
@@ -93,6 +94,16 @@
   .note-item .nt-body{font-size:0.85rem; margin-top:2px; white-space:pre-wrap;}
   .note-item .nt-meta{font-size:0.72rem; color:var(--ink-faint); font-family:var(--font-mono); margin-top:4px;}
   .stat-grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:10px; margin-bottom:14px;}
+  .chart-box{position:relative; height:260px; margin-bottom:16px;}
+  #printReportHeader{display:none;}
+  @media print{
+    body *{visibility:hidden;}
+    #printArea, #printArea *{visibility:visible;}
+    #printArea{position:absolute; top:0; left:0; width:100%;}
+    #printReportHeader{display:block; margin-bottom:16px;}
+    .btn, .sub-tabs, #screenLogin, .brand, footer.foot{display:none !important;}
+    .card{box-shadow:none; border:1px solid #ccc;}
+  }
   .stat{background:var(--surface-2); border:1px solid var(--border); border-radius:var(--radius-sm); padding:10px 12px;}
   .stat .num{font-family:var(--font-display); font-size:1.35rem; font-weight:800;}
   .stat .lbl{font-size:0.72rem; color:var(--ink-muted); font-weight:600;}
@@ -198,9 +209,18 @@
         <button class="btn primary" id="btnLoadSummary" style="width:auto;">Xem tổng kết</button>
         <div class="msg" id="summaryMsg"></div>
       </div>
+      <div id="printArea">
       <div class="card" id="summaryStatsCard" style="display:none;">
-        <h2>Thống kê</h2>
+        <div id="printReportHeader">
+          <h2 style="margin-bottom:2px;">Báo cáo tuần — Ghi chú Ban cán sự · Lớp 8A9</h2>
+          <p class="faint" id="printReportRange" style="margin:0 0 12px;"></p>
+        </div>
+        <div class="row" style="justify-content:space-between; align-items:flex-start;">
+          <h2>Thống kê</h2>
+          <button class="btn ghost sm" id="btnExportPdf">📄 Xuất báo cáo PDF</button>
+        </div>
         <div class="stat-grid" id="summaryStats"></div>
+        <div class="chart-box"><canvas id="statsChart"></canvas></div>
         <h3 style="margin-bottom:8px; font-size:0.9rem;">Theo học sinh <span class="faint" style="font-weight:500;">(bấm vào tên để xem chi tiết)</span></h3>
         <div class="student-legend">
           <span>Ít</span>
@@ -220,6 +240,7 @@
           </table></div>
           <button class="btn primary" id="btnOpenStudentProfile" style="width:auto; margin-top:12px;">📋 Xem hồ sơ đầy đủ của học sinh này</button>
         </div>
+      </div>
       </div>
       <div class="card">
         <h2>Nhận xét cho ban cán sự</h2>
@@ -1322,6 +1343,16 @@
   }
   document.getElementById("btnLoadSummary").addEventListener("click", loadSummary);
 
+  document.getElementById("btnExportPdf").addEventListener("click", function(){
+    var weekSel = document.getElementById("sumWeek");
+    var weekLabel = weekSel.value !== "custom" ? weekSel.options[weekSel.selectedIndex].text : "Tuỳ chỉnh";
+    var startVal = document.getElementById("sumStart").value;
+    var endVal = document.getElementById("sumEnd").value;
+    document.getElementById("printReportRange").textContent =
+      weekLabel + " · Từ "+esc(startVal.split("-").reverse().join("/"))+" đến "+esc(endVal.split("-").reverse().join("/"))+" · Xuất lúc "+fmtDateTime(new Date().toISOString());
+    window.print();
+  });
+
   var currentSummaryNotes = [];
   var summaryStudentFilter = null;
 
@@ -1358,8 +1389,34 @@
       '<div class="stat"><div class="num">'+notes.length+'</div><div class="lbl">Tổng ghi chú</div></div>' +
       catList.slice(0,3).map(function(c){ return '<div class="stat"><div class="num">'+byCat[c]+'</div><div class="lbl">'+esc(c)+'</div></div>'; }).join("");
 
+    renderStatsChart(byCat, catList);
     renderStudentGrid(byStudent);
     renderSummaryDetailTable();
+  }
+
+  var statsChartInstance = null;
+  function renderStatsChart(byCat, catList){
+    var canvas = document.getElementById("statsChart");
+    if(statsChartInstance){ statsChartInstance.destroy(); statsChartInstance = null; }
+    if(!catList.length || typeof Chart === "undefined") return;
+    var palette = ["#2F6F68","#B0402F","#A9700F","#3F7D4F","#6E6759","#8E6FA8","#3F7DAF","#B0708C"];
+    statsChartInstance = new Chart(canvas.getContext("2d"), {
+      type: "bar",
+      data: {
+        labels: catList,
+        datasets: [{
+          label: "Số ghi chú",
+          data: catList.map(function(c){ return byCat[c]; }),
+          backgroundColor: catList.map(function(c,i){ return palette[i % palette.length]; }),
+          borderRadius: 6
+        }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: { y: { beginAtZero: true, ticks: { precision: 0 } }, x: { ticks: { autoSkip: false, maxRotation: 40, minRotation: 0 } } }
+      }
+    });
   }
 
   function renderStudentGrid(byStudent){
