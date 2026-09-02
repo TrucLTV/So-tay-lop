@@ -229,6 +229,7 @@
       <div class="card">
         <h2>Nhận xét cho ban cán sự</h2>
         <p class="hint">Nhận xét sẽ hiện ở ô "Nhận xét của GV" tương ứng trên trang ban cán sự.</p>
+        <div id="remarkStudentHint" style="display:none;"></div>
         <label>Mục</label>
         <div class="chip-row" id="remarkGroupChips"></div>
         <div class="field"><label>Nội dung nhận xét</label><textarea id="remarkContent" placeholder="Sau khi xem thống kê, ban cán sự cần làm gì tiếp theo…"></textarea></div>
@@ -1151,7 +1152,9 @@
       var remarks = (res.notes || []).filter(function(n){ return n.kind === "nhan_xet_gv" && n.category === selectedRemarkGroup; });
       if(!remarks.length){ el.innerHTML = '<div class="empty">Chưa có nhận xét nào cho mục này.</div>'; return; }
       el.innerHTML = remarks.map(function(n){
-        return '<div class="note-item"><div class="nt-body">'+esc(n.content)+'</div>'+
+        return '<div class="note-item">' +
+          (n.student_name ? '<div class="nt-head">Về: '+esc(n.student_name)+'</div>' : '') +
+          '<div class="nt-body">'+esc(n.content)+'</div>'+
           '<div class="nt-meta">'+fmtDateTime(n.created_at)+' <button class="btn ghost sm danger" data-delremark="'+n.id+'" style="margin-left:8px;">Xoá</button></div></div>';
       }).join("");
     }).catch(function(){ el.innerHTML = '<div class="empty">Lỗi kết nối.</div>'; });
@@ -1173,12 +1176,23 @@
     var btn = document.getElementById("btnSendRemark");
     btn.disabled = true;
     msg.className="msg"; msg.textContent="Đang gửi…";
-    rpc("bcs_admin_submit_remark", {p_admin_password: adminSession.password, p_category: selectedRemarkGroup, p_content: content}).then(function(res){
+    var taggedStudent = summaryStudentFilter || null;
+    rpc("bcs_admin_submit_remark", {p_admin_password: adminSession.password, p_category: selectedRemarkGroup, p_content: content, p_student_name: taggedStudent}).then(function(res){
+      if(res && res.ok){
+        if(taggedStudent){
+          // tự lưu 1 bản vào hồ sơ riêng của học sinh, kèm đúng thời gian
+          return rpc("bcs_admin_submit_student_note", {p_admin_password: adminSession.password, p_student_name: taggedStudent, p_content: "[Gửi ban cán sự · "+selectedRemarkGroup+"] "+content});
+        }
+        return res;
+      }
+      return res;
+    }).then(function(res){
       btn.disabled = false;
       if(res && res.ok){
         msg.className="msg ok"; msg.textContent="✓ Đã gửi.";
         document.getElementById("remarkContent").value = "";
         loadRemarks();
+        if(taggedStudent) loadStudentNotes(taggedStudent);
       } else {
         msg.className="msg err"; msg.textContent="Không gửi được.";
       }
@@ -1281,15 +1295,28 @@
     renderSummaryDetailTable();
   });
 
+  function updateRemarkStudentHint(){
+    var el = document.getElementById("remarkStudentHint");
+    if(summaryStudentFilter){
+      el.style.display = "";
+      el.innerHTML = '<div class="msg ok">Đang áp dụng cho học sinh: <strong>'+esc(summaryStudentFilter)+'</strong> — nhận xét sẽ ghi kèm tên học sinh và tự lưu 1 bản vào hồ sơ riêng của học sinh này.</div>';
+    } else {
+      el.style.display = "none";
+      el.innerHTML = "";
+    }
+  }
+
   function renderSummaryDetailTable(){
     var section = document.getElementById("summaryDetailSection");
     if(!summaryStudentFilter){
       section.style.display = "none";
+      updateRemarkStudentHint();
       return;
     }
     section.style.display = "";
     document.getElementById("summaryStudentFilterName").textContent = summaryStudentFilter;
     loadStudentNotes(summaryStudentFilter);
+    updateRemarkStudentHint();
     var notes = currentSummaryNotes.filter(function(n){ return n.student_name === summaryStudentFilter; });
     document.getElementById("summaryTbody").innerHTML = notes.length ? notes.map(function(n){
       return '<tr><td class="faint" style="white-space:nowrap;">'+fmtDateTime(n.created_at)+'</td>'+
