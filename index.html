@@ -468,7 +468,7 @@
       '<td>'+esc(n.category)+'</td>' +
       '<td>'+(n.student_name?esc(n.student_name):'—')+'</td>' +
       '<td>'+(n.content?esc(n.content):'<span class="faint">—</span>')+'</td>' +
-      '<td class="faint" style="white-space:nowrap;">'+esc(n.role_name)+'<br><span style="font-family:var(--font-mono); font-size:0.7rem;">'+fmtDateTime(n.created_at)+'</span></td>' +
+      '<td class="faint" style="white-space:nowrap;">'+esc(n.role_name)+'</td>' +
       '<td style="white-space:nowrap;">'+(canEdit ? '<button class="btn ghost sm" data-action="edit" data-note-id="'+n.id+'">Sửa</button> <button class="btn ghost sm danger" data-action="delete" data-note-id="'+n.id+'">Xoá</button>' : '')+'</td>' +
       '</tr>';
   }
@@ -526,7 +526,7 @@
         '<td>'+esc(n.category)+'</td>' +
         '<td>—</td>' +
         '<td>'+(n.content?esc(n.content):'<span class="faint">—</span>')+'</td>' +
-        '<td class="faint" style="white-space:nowrap;">'+esc(n.role_name)+'<br><span style="font-family:var(--font-mono); font-size:0.7rem;">'+fmtDateTime(n.created_at)+'</span></td>' +
+        '<td class="faint" style="white-space:nowrap;">'+esc(n.role_name)+'</td>' +
         '<td style="white-space:nowrap;">'+(n.occur_date ? '<button class="btn ghost sm" data-action="toggle-baobai-detail" data-note-id="'+n.id+'">'+(expandedThongBaoId===n.id?'🙈 Ẩn':'👁 Xem chi tiết')+'</button>' : '')+'</td>' +
         '</tr>';
       if(expandedThongBaoId === n.id && n.occur_date){
