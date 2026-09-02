@@ -1400,15 +1400,15 @@
           return '<div class="note-item"><div class="nt-body">'+esc(n.content)+'</div>'+
             '<div class="nt-meta">'+fmtDateTime(n.created_at)+' <button class="btn ghost sm danger" data-delpunish="'+n.id+'" style="margin-left:8px;">Xoá</button></div></div>';
         }).join("")
-        : '<div class="empty">Chưa có hình phạt nào được ghi nhận.</div>';
+        : '<div class="empty">Chưa có gì trong hồ sơ.</div>';
 
       container.innerHTML =
         '<button class="btn ghost sm" data-action="close-profile" style="margin-bottom:12px;">← Quay lại thống kê</button>' +
         '<div class="card"><h2>📋 Hồ sơ: '+esc(name)+'</h2>' +
-        '<h3 style="font-size:0.9rem; margin:10px 0 8px;">Toàn bộ vi phạm / khen thưởng / thông báo liên quan</h3>' +
+        '<h3 style="font-size:0.9rem; margin:10px 0 8px;">Vi phạm / khen thưởng / thông báo trong kỳ hiện tại <span class="faint" style="font-weight:500;">(mất khi Reset)</span></h3>' +
         historyHtml +
         '</div>' +
-        '<div class="card"><h3 style="font-size:0.9rem; margin-bottom:8px;">Hình phạt đã áp dụng</h3>' +
+        '<div class="card"><h3 style="font-size:0.9rem; margin-bottom:8px;">Hồ sơ lưu trữ — vi phạm &amp; hình phạt <span class="faint" style="font-weight:500;">(lưu suốt năm học, không mất khi Reset)</span></h3>' +
         punishHtml +
         '</div>';
     }).catch(function(){
