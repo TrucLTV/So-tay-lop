@@ -243,6 +243,12 @@
         <button class="btn primary" id="btnChangeAdminPw" style="width:auto;">Đổi mật khẩu</button>
         <div class="msg" id="accMsg"></div>
       </div>
+      <div class="card" style="border-color:var(--critical-soft);">
+        <h2 style="color:var(--critical);">Reset dữ liệu ghi chú</h2>
+        <p class="hint">Xoá toàn bộ Thông báo, Vi phạm, Khen thưởng, Nhận xét của GV — ở cả trang ban cán sự lẫn trang này (đưa số liệu về 0). <strong>Hồ sơ riêng từng học sinh KHÔNG bị xoá</strong>, được lưu suốt năm học.</p>
+        <button class="btn danger" id="btnResetNotes" style="width:auto;">🗑 Reset toàn bộ ghi chú</button>
+        <div class="msg" id="resetMsg"></div>
+      </div>
     </div>
   </div>
 
@@ -1444,6 +1450,24 @@
         msg.className="msg err"; msg.textContent="Sai mật khẩu hiện tại.";
       }
     }).catch(function(){ msg.className="msg err"; msg.textContent="Lỗi kết nối."; });
+  });
+
+  document.getElementById("btnResetNotes").addEventListener("click", function(){
+    var msg = document.getElementById("resetMsg");
+    if(!confirm("Xoá TOÀN BỘ Thông báo / Vi phạm / Khen thưởng / Nhận xét của GV, ở cả trang ban cán sự lẫn trang này?\n\nHồ sơ riêng từng học sinh sẽ được giữ lại nguyên vẹn.\n\nHành động này KHÔNG thể hoàn tác. Tiếp tục?")) return;
+    var btn = document.getElementById("btnResetNotes");
+    btn.disabled = true;
+    msg.className="msg"; msg.textContent="Đang xoá…";
+    rpc("bcs_admin_reset_notes", {p_admin_password: adminSession.password}).then(function(res){
+      btn.disabled = false;
+      if(res && res.ok){
+        msg.className="msg ok"; msg.textContent="✓ Đã reset ("+res.deleted+" ghi chú đã xoá). Hồ sơ học sinh vẫn được giữ nguyên.";
+        document.getElementById("summaryStatsCard").style.display = "none";
+        currentSummaryNotes = [];
+      } else {
+        msg.className="msg err"; msg.textContent="Không xoá được.";
+      }
+    }).catch(function(){ btn.disabled=false; msg.className="msg err"; msg.textContent="Lỗi kết nối."; });
   });
 
   resetRoleForm();
