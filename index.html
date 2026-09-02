@@ -157,7 +157,7 @@
       <h2 style="font-size:1.05rem;">Quản trị (GV)</h2>
       <button class="btn ghost sm" id="btnAdminLogout">Đăng xuất</button>
     </div>
-    <div class="sub-tabs">
+    <div class="sub-tabs" id="adminSubTabs">
       <button class="active" data-sub="roles">Quản lý ban cán sự</button>
       <button data-sub="summary">Tổng kết theo tuần</button>
       <button data-sub="account">Tài khoản</button>
@@ -217,13 +217,7 @@
             <thead><tr><th>Thời gian</th><th>Vai trò</th><th>Loại</th><th>Học sinh</th><th>Nội dung</th><th></th></tr></thead>
             <tbody id="summaryTbody"></tbody>
           </table></div>
-          <div class="card" style="margin-top:14px; background:var(--surface-2);">
-            <h2 style="font-size:0.94rem;">Nhận xét riêng cho học sinh <span class="faint" style="font-weight:500;">(chỉ GV xem, để tổng hợp hồ sơ)</span></h2>
-            <div class="field"><textarea id="studentNoteContent" placeholder="Ghi nhận xét riêng về học sinh này…"></textarea></div>
-            <button class="btn primary" id="btnSendStudentNote" style="width:auto;">Gửi nhận xét</button>
-            <div class="msg" id="studentNoteMsg"></div>
-            <div id="studentNoteList" style="margin-top:12px;"></div>
-          </div>
+          <button class="btn primary" id="btnOpenStudentProfile" style="width:auto; margin-top:12px;">📋 Xem hồ sơ đầy đủ của học sinh này</button>
         </div>
       </div>
       <div class="card">
@@ -238,6 +232,8 @@
         <div id="remarkList" style="margin-top:14px;"></div>
       </div>
     </div>
+
+    <div id="sub-studentProfile" style="display:none;"></div>
 
     <div id="sub-account" style="display:none;">
       <div class="card">
@@ -1001,8 +997,9 @@
     btn.addEventListener("click", function(){ switchAdminSub(btn.dataset.sub); });
   });
   function switchAdminSub(name){
+    document.getElementById("adminSubTabs").style.display = "";
     document.querySelectorAll(".sub-tabs button[data-sub]").forEach(function(b){ b.classList.toggle("active", b.dataset.sub===name); });
-    ["roles","summary","account"].forEach(function(s){ document.getElementById("sub-"+s).style.display = (s===name)?"":"none"; });
+    ["roles","summary","account","studentProfile"].forEach(function(s){ document.getElementById("sub-"+s).style.display = (s===name)?"":"none"; });
   }
 
   // ---- role scope checklist (main groups only; sub-loại nằm ở CATEGORY_GROUPS, không chọn lẻ ở đây) ----
@@ -1226,7 +1223,6 @@
         msg.className="msg ok"; msg.textContent="✓ Đã gửi.";
         document.getElementById("remarkContent").value = "";
         loadRemarks();
-        if(taggedStudent) loadStudentNotes(taggedStudent);
       } else {
         msg.className="msg err"; msg.textContent="Không gửi được.";
       }
@@ -1349,7 +1345,6 @@
     }
     section.style.display = "";
     document.getElementById("summaryStudentFilterName").textContent = summaryStudentFilter;
-    loadStudentNotes(summaryStudentFilter);
     updateRemarkStudentHint();
     var notes = currentSummaryNotes.filter(function(n){ return n.student_name === summaryStudentFilter; });
     document.getElementById("summaryTbody").innerHTML = notes.length ? notes.map(function(n){
@@ -1368,47 +1363,70 @@
     });
   });
 
-  // ---- nhận xét riêng cho từng học sinh (chỉ GV xem) ----
-  function loadStudentNotes(name){
-    var el = document.getElementById("studentNoteList");
-    el.innerHTML = '<div class="empty">Đang tải…</div>';
-    rpc("bcs_admin_get_student_notes", {p_admin_password: adminSession.password, p_student_name: name}).then(function(res){
-      if(!res || !res.ok){ el.innerHTML = '<div class="empty">Không tải được.</div>'; return; }
-      var list = res.notes || [];
-      el.innerHTML = list.length ? list.map(function(n){
-        return '<div class="note-item"><div class="nt-body">'+esc(n.content)+'</div>'+
-          '<div class="nt-meta">'+fmtDateTime(n.created_at)+' <button class="btn ghost sm danger" data-delstudentnote="'+n.id+'" style="margin-left:8px;">Xoá</button></div></div>';
-      }).join("") : '<div class="empty">Chưa có nhận xét riêng nào.</div>';
-    }).catch(function(){ el.innerHTML = '<div class="empty">Lỗi kết nối.</div>'; });
+  // ---- hồ sơ đầy đủ của 1 học sinh (trang riêng, xem toàn bộ thời gian) ----
+  function renderStudentProfile(name){
+    var container = document.getElementById("sub-studentProfile");
+    container.innerHTML = '<div class="empty">Đang tải…</div>';
+    document.getElementById("adminSubTabs").style.display = "none";
+    ["roles","summary","account"].forEach(function(s){ document.getElementById("sub-"+s).style.display = "none"; });
+    container.style.display = "";
+
+    Promise.all([
+      rpc("bcs_admin_get_notes", {p_admin_password: adminSession.password, p_start: null, p_end: null}),
+      rpc("bcs_admin_get_student_notes", {p_admin_password: adminSession.password, p_student_name: name})
+    ]).then(function(results){
+      var allRes = results[0], punishRes = results[1];
+      var history = (allRes && allRes.ok) ? (allRes.notes||[]).filter(function(n){
+        return n.student_name === name && (n.kind||"vi_pham") !== "nhan_xet_ca_nhan";
+      }) : [];
+      var punishments = (punishRes && punishRes.ok) ? (punishRes.notes||[]) : [];
+
+      var historyHtml = history.length ?
+        '<div class="table-wrap"><table><thead><tr><th>Thời gian</th><th>Vai trò</th><th>Loại</th><th>Nội dung</th></tr></thead><tbody>' +
+        history.map(function(n){
+          return '<tr><td class="faint" style="white-space:nowrap;">'+fmtDateTime(n.created_at)+'</td>'+
+            '<td>'+esc(n.role_name)+'</td><td>'+esc(n.category)+'</td><td>'+(n.content?esc(n.content):'<span class="faint">—</span>')+'</td></tr>';
+        }).join("") + '</tbody></table></div>'
+        : '<div class="empty">Chưa có ghi chú nào.</div>';
+
+      var punishHtml = punishments.length ?
+        punishments.map(function(n){
+          return '<div class="note-item"><div class="nt-body">'+esc(n.content)+'</div>'+
+            '<div class="nt-meta">'+fmtDateTime(n.created_at)+' <button class="btn ghost sm danger" data-delpunish="'+n.id+'" style="margin-left:8px;">Xoá</button></div></div>';
+        }).join("")
+        : '<div class="empty">Chưa có hình phạt nào được ghi nhận.</div>';
+
+      container.innerHTML =
+        '<button class="btn ghost sm" data-action="close-profile" style="margin-bottom:12px;">← Quay lại thống kê</button>' +
+        '<div class="card"><h2>📋 Hồ sơ: '+esc(name)+'</h2>' +
+        '<h3 style="font-size:0.9rem; margin:10px 0 8px;">Toàn bộ vi phạm / khen thưởng / thông báo liên quan</h3>' +
+        historyHtml +
+        '</div>' +
+        '<div class="card"><h3 style="font-size:0.9rem; margin-bottom:8px;">Hình phạt đã áp dụng</h3>' +
+        punishHtml +
+        '</div>';
+    }).catch(function(){
+      container.innerHTML = '<button class="btn ghost sm" data-action="close-profile">← Quay lại thống kê</button><div class="empty">Lỗi kết nối.</div>';
+    });
   }
 
-  document.getElementById("studentNoteList").addEventListener("click", function(e){
-    var b = e.target.closest("[data-delstudentnote]");
-    if(!b) return;
-    if(!confirm("Xoá nhận xét này?")) return;
-    rpc("bcs_admin_delete_note", {p_admin_password: adminSession.password, p_id: b.dataset.delstudentnote}).then(function(res){
-      if(res && res.ok){ loadStudentNotes(summaryStudentFilter); } else { alert("Không xoá được."); }
-    });
+  document.getElementById("btnOpenStudentProfile").addEventListener("click", function(){
+    if(!summaryStudentFilter) return;
+    renderStudentProfile(summaryStudentFilter);
   });
 
-  document.getElementById("btnSendStudentNote").addEventListener("click", function(){
-    var msg = document.getElementById("studentNoteMsg");
-    var content = document.getElementById("studentNoteContent").value.trim();
-    if(!summaryStudentFilter){ msg.className="msg err"; msg.textContent="Chưa chọn học sinh."; return; }
-    if(!content){ msg.className="msg err"; msg.textContent="Vui lòng nhập nội dung."; return; }
-    var btn = document.getElementById("btnSendStudentNote");
-    btn.disabled = true;
-    msg.className="msg"; msg.textContent="Đang gửi…";
-    rpc("bcs_admin_submit_student_note", {p_admin_password: adminSession.password, p_student_name: summaryStudentFilter, p_content: content}).then(function(res){
-      btn.disabled = false;
-      if(res && res.ok){
-        msg.className="msg ok"; msg.textContent="✓ Đã gửi.";
-        document.getElementById("studentNoteContent").value = "";
-        loadStudentNotes(summaryStudentFilter);
-      } else {
-        msg.className="msg err"; msg.textContent="Không gửi được.";
-      }
-    }).catch(function(){ btn.disabled=false; msg.className="msg err"; msg.textContent="Lỗi kết nối."; });
+  document.getElementById("sub-studentProfile").addEventListener("click", function(e){
+    if(e.target.closest("[data-action='close-profile']")){
+      switchAdminSub("summary");
+      return;
+    }
+    var delBtn = e.target.closest("[data-delpunish]");
+    if(delBtn){
+      if(!confirm("Xoá hình phạt này?")) return;
+      rpc("bcs_admin_delete_note", {p_admin_password: adminSession.password, p_id: delBtn.dataset.delpunish}).then(function(res){
+        if(res && res.ok){ renderStudentProfile(summaryStudentFilter); } else { alert("Không xoá được."); }
+      });
+    }
   });
 
   // ---- account ----
