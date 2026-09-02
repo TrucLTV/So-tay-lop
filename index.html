@@ -1169,6 +1169,32 @@
     });
   });
 
+  // Tóm tắt lỗi vi phạm của 1 học sinh, lấy từ đúng dữ liệu đang hiện ở bảng "Chi tiết" phía trên
+  // (currentSummaryNotes đã theo khoảng thời gian GV đang chọn).
+  function violationSummaryFor(studentName){
+    var counts = {};
+    currentSummaryNotes.forEach(function(n){
+      if(n.student_name !== studentName) return;
+      if((n.kind||"vi_pham") === "nhan_xet_gv") return;
+      counts[n.category] = (counts[n.category]||0) + 1;
+    });
+    var keys = Object.keys(counts);
+    if(!keys.length) return "(không có vi phạm trong khoảng thời gian đang xem)";
+    return keys.map(function(c){ return c+" (x"+counts[c]+")"; }).join(", ");
+  }
+
+  // Đếm học sinh đã từng chịu đúng hình phạt này bao nhiêu lần, dựa trên hồ sơ riêng đã lưu trước đó
+  function countPriorPunishment(existingNotes, punishmentText){
+    var marker = "Hình phạt: " + punishmentText;
+    var count = 0;
+    existingNotes.forEach(function(n){
+      (n.content||"").split("\n").forEach(function(line){
+        if(line === marker || line.indexOf(marker+" (") === 0) count++;
+      });
+    });
+    return count;
+  }
+
   document.getElementById("btnSendRemark").addEventListener("click", function(){
     var msg = document.getElementById("remarkMsg");
     var content = document.getElementById("remarkContent").value.trim();
@@ -1177,16 +1203,24 @@
     btn.disabled = true;
     msg.className="msg"; msg.textContent="Đang gửi…";
     var taggedStudent = summaryStudentFilter || null;
-    rpc("bcs_admin_submit_remark", {p_admin_password: adminSession.password, p_category: selectedRemarkGroup, p_content: content, p_student_name: taggedStudent}).then(function(res){
-      if(res && res.ok){
-        if(taggedStudent){
-          // tự lưu 1 bản vào hồ sơ riêng của học sinh, kèm đúng thời gian
-          return rpc("bcs_admin_submit_student_note", {p_admin_password: adminSession.password, p_student_name: taggedStudent, p_content: "[Gửi ban cán sự · "+selectedRemarkGroup+"] "+content});
-        }
-        return res;
-      }
-      return res;
-    }).then(function(res){
+
+    var step = rpc("bcs_admin_submit_remark", {p_admin_password: adminSession.password, p_category: selectedRemarkGroup, p_content: content, p_student_name: taggedStudent});
+
+    if(taggedStudent){
+      step = step.then(function(res){
+        if(!res || !res.ok) return res;
+        return rpc("bcs_admin_get_student_notes", {p_admin_password: adminSession.password, p_student_name: taggedStudent}).then(function(existingRes){
+          var existing = (existingRes && existingRes.ok) ? (existingRes.notes||[]) : [];
+          var occurrenceNo = countPriorPunishment(existing, content) + 1;
+          var archiveText = "Vi phạm: "+violationSummaryFor(taggedStudent)+"\n"+
+            "Hình phạt: "+content+" (lần thứ "+occurrenceNo+")\n"+
+            "(Gửi ban cán sự · "+selectedRemarkGroup+")";
+          return rpc("bcs_admin_submit_student_note", {p_admin_password: adminSession.password, p_student_name: taggedStudent, p_content: archiveText});
+        });
+      });
+    }
+
+    step.then(function(res){
       btn.disabled = false;
       if(res && res.ok){
         msg.className="msg ok"; msg.textContent="✓ Đã gửi.";
