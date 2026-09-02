@@ -1172,18 +1172,19 @@
     });
   });
 
-  // Tóm tắt lỗi vi phạm của 1 học sinh, lấy từ đúng dữ liệu đang hiện ở bảng "Chi tiết" phía trên
-  // (currentSummaryNotes đã theo khoảng thời gian GV đang chọn).
-  function violationSummaryFor(studentName){
-    var counts = {};
-    currentSummaryNotes.forEach(function(n){
-      if(n.student_name !== studentName) return;
-      if((n.kind||"vi_pham") === "nhan_xet_gv") return;
-      counts[n.category] = (counts[n.category]||0) + 1;
+  // Liệt kê rõ từng vi phạm của 1 học sinh (không chỉ đếm số lần), lấy từ đúng dữ liệu
+  // đang hiện ở bảng "Chi tiết" phía trên (currentSummaryNotes theo khoảng thời gian GV đang chọn).
+  // Dùng để "chốt" — gộp các vi phạm này cùng với hình phạt vào 1 bản ghi hồ sơ.
+  function violationListFor(studentName){
+    var items = currentSummaryNotes.filter(function(n){
+      return n.student_name === studentName && (n.kind||"vi_pham") !== "nhan_xet_gv";
     });
-    var keys = Object.keys(counts);
-    if(!keys.length) return "(không có vi phạm trong khoảng thời gian đang xem)";
-    return keys.map(function(c){ return c+" (x"+counts[c]+")"; }).join(", ");
+    if(!items.length) return "(không có vi phạm trong khoảng thời gian đang xem)";
+    return items.map(function(n){
+      var line = "- " + n.category;
+      if(n.content) line += ": " + n.content;
+      return line;
+    }).join("\n");
   }
 
   // Đếm học sinh đã từng chịu đúng hình phạt này bao nhiêu lần, dựa trên hồ sơ riêng đã lưu trước đó
@@ -1215,7 +1216,7 @@
         return rpc("bcs_admin_get_student_notes", {p_admin_password: adminSession.password, p_student_name: taggedStudent}).then(function(existingRes){
           var existing = (existingRes && existingRes.ok) ? (existingRes.notes||[]) : [];
           var occurrenceNo = countPriorPunishment(existing, content) + 1;
-          var archiveText = "Vi phạm: "+violationSummaryFor(taggedStudent)+"\n"+
+          var archiveText = "Chốt vi phạm:\n"+violationListFor(taggedStudent)+"\n"+
             "Hình phạt: "+content+" (lần thứ "+occurrenceNo+")\n"+
             "(Gửi ban cán sự · "+selectedRemarkGroup+")";
           return rpc("bcs_admin_submit_student_note", {p_admin_password: adminSession.password, p_student_name: taggedStudent, p_content: archiveText});
@@ -1333,12 +1334,15 @@
 
   function updateRemarkStudentHint(){
     var el = document.getElementById("remarkStudentHint");
+    var btn = document.getElementById("btnSendRemark");
     if(summaryStudentFilter){
       el.style.display = "";
-      el.innerHTML = '<div class="msg ok">Đang áp dụng cho học sinh: <strong>'+esc(summaryStudentFilter)+'</strong> — nhận xét sẽ ghi kèm tên học sinh và tự lưu 1 bản vào hồ sơ riêng của học sinh này.</div>';
+      el.innerHTML = '<div class="msg ok">Đang áp dụng cho học sinh: <strong>'+esc(summaryStudentFilter)+'</strong> — bấm "Chốt hình phạt" sẽ gộp các vi phạm đang hiện ở bảng Chi tiết với hình phạt bên dưới, ghi kèm tên học sinh và lưu vào hồ sơ riêng.</div>';
+      btn.textContent = "🔒 Chốt hình phạt";
     } else {
       el.style.display = "none";
       el.innerHTML = "";
+      btn.textContent = "Gửi nhận xét";
     }
   }
 
