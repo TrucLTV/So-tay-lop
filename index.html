@@ -49,6 +49,14 @@
   .mc-count{font-family:var(--font-display); font-weight:800; font-size:1.5rem; color:var(--ink);}
   .mc-tag{font-size:0.68rem; font-weight:700; color:var(--accent-strong); margin-top:2px;}
   .mc-tag.locked{color:var(--ink-faint);}
+  .gv-desk{max-width:220px; margin:0 auto 22px; text-align:center; background:var(--surface-3); border:1.5px solid var(--border-strong); border-radius:var(--radius-sm); padding:14px; font-weight:700; color:var(--ink);}
+  .seating-rows{display:flex; flex-direction:column; gap:18px;}
+  .seating-row{display:flex; gap:10px; flex-wrap:wrap; justify-content:center;}
+  .seating-desk{display:flex; gap:2px; border:1.5px solid var(--border-strong); border-radius:var(--radius-sm); overflow:hidden; background:var(--border);}
+  .seat{width:96px; min-height:52px; background:var(--surface); padding:6px 8px; font-size:0.78rem; font-weight:600; color:var(--ink); display:flex; align-items:center; justify-content:center; text-align:center; cursor:grab; user-select:none; line-height:1.25;}
+  .seat.empty{color:var(--ink-faint); font-weight:500; font-style:italic;}
+  .seat.dragover{background:var(--accent-soft); outline:2px dashed var(--accent);}
+  .seat:active{cursor:grabbing;}
   .note-item .nt-actions{margin-top:6px; display:flex; gap:6px;}
   .add-form{border-top:1px dashed var(--border); margin-top:10px; padding-top:10px;}
   .edit-form{background:var(--surface-2); border:1px solid var(--border-strong); border-radius:var(--radius-sm); padding:10px; margin-bottom:8px;}
@@ -473,6 +481,10 @@
   var baoBaiOpen = false; // trang "Viết báo bài" (chỉ dưới mục Học tập)
   var baoBaiDate = null;
   var expandedThongBaoId = null; // note id đang mở xem chi tiết báo bài (trong Học tập · Thông báo)
+  var seatingOpen = false; // trang "Sơ đồ lớp"
+  var SEATING_ROWS = 4, SEATING_DESKS_PER_ROW = 6, SEATING_TOTAL = SEATING_ROWS * SEATING_DESKS_PER_ROW * 2; // 48 chỗ
+  var seatingData = {}; // seat_index -> student_name
+  var dragSeatIndex = null;
 
   function scopeGroupNames(){
     var scope = session.role.scope;
@@ -508,6 +520,7 @@
     document.getElementById("roleNameLabel").textContent = session.role.role_name;
     currentCell = null;
     baoBaiOpen = false;
+    seatingOpen = false;
     editingNoteId = null;
     loadNotesAndRender();
   }
@@ -527,7 +540,8 @@
   }
 
   function renderScreen(){
-    if(baoBaiOpen) renderBaoBai();
+    if(seatingOpen) renderSeating();
+    else if(baoBaiOpen) renderBaoBai();
     else if(currentCell) renderCellDetail(currentCell.sectionId, currentCell.kindId);
     else renderMatrix();
   }
@@ -633,7 +647,8 @@
   // ---- trang tổng thể: bảng ma trận 4 mục x 4 loại nội dung ----
   function renderMatrix(){
     var headHtml = '<tr><th></th>' + SECTIONS.map(function(sec){
-      var extra = sec.name === "Học tập" ? '<br><button class="btn ghost sm" data-action="open-baobai" style="margin-top:4px;">📖 Viết báo bài</button>' : '';
+      var extra = sec.name === "Học tập" ? '<br><button class="btn ghost sm" data-action="open-baobai" style="margin-top:4px;">📖 Viết báo bài</button>'+
+        ' <button class="btn ghost sm" data-action="open-seating" style="margin-top:4px;">🪑 Sơ đồ lớp</button>' : '';
       return '<th>'+esc(sec.name)+extra+'</th>';
     }).join("") + '</tr>';
     var bodyHtml = ROW_KINDS.map(function(row){
@@ -791,6 +806,94 @@
       finishHtml;
   }
 
+  // ---- Sơ đồ lớp: 4 dãy x 6 bàn đôi = 48 chỗ, kéo-thả đổi chỗ, dùng chung cả lớp ----
+  function loadSeatingAndRender(){
+    document.getElementById("groupSections").innerHTML = '<div class="empty">Đang tải…</div>';
+    rpc("bcs_get_seating", {p_password: session.pw}).then(function(res){
+      if(!res || !res.ok){
+        document.getElementById("groupSections").innerHTML = '<button class="btn ghost sm" data-action="back-matrix">← Quay lại bảng tổng hợp</button><div class="empty">Không tải được sơ đồ.</div>';
+        return;
+      }
+      seatingData = {};
+      (res.seats || []).forEach(function(s){ if(s.student_name) seatingData[s.seat_index] = s.student_name; });
+      if(!(res.seats||[]).length){
+        // Chưa có sơ đồ -> tự điền ngẫu nhiên tên trong danh sách để test thử
+        var shuffled = DEFAULT_STUDENTS.slice();
+        for(var i=shuffled.length-1;i>0;i--){ var j=Math.floor(Math.random()*(i+1)); var tmp=shuffled[i]; shuffled[i]=shuffled[j]; shuffled[j]=tmp; }
+        var calls = [];
+        for(var idx=0; idx<SEATING_TOTAL; idx++){
+          var name = shuffled[idx] || null;
+          if(name){ seatingData[idx] = name; calls.push(rpc("bcs_set_seat", {p_password: session.pw, p_seat_index: idx, p_student_name: name})); }
+        }
+        Promise.all(calls).then(renderSeating).catch(renderSeating);
+      } else {
+        renderSeating();
+      }
+    }).catch(function(){
+      document.getElementById("groupSections").innerHTML = '<button class="btn ghost sm" data-action="back-matrix">← Quay lại bảng tổng hợp</button><div class="empty">Lỗi kết nối.</div>';
+    });
+  }
+
+  function seatHtml(idx){
+    var name = seatingData[idx];
+    return '<div class="seat'+(name?"":" empty")+'" draggable="true" data-seat="'+idx+'">'+(name?esc(name):"Trống")+'</div>';
+  }
+
+  function renderSeating(){
+    var rowsHtml = "";
+    for(var row=0; row<SEATING_ROWS; row++){
+      var desksHtml = "";
+      for(var desk=0; desk<SEATING_DESKS_PER_ROW; desk++){
+        var i1 = row*SEATING_DESKS_PER_ROW*2 + desk*2;
+        var i2 = i1+1;
+        desksHtml += '<div class="seating-desk">'+seatHtml(i1)+seatHtml(i2)+'</div>';
+      }
+      rowsHtml += '<div class="seating-row">'+desksHtml+'</div>';
+    }
+    document.getElementById("groupSections").innerHTML =
+      '<button class="btn ghost sm" data-action="back-matrix" style="margin-bottom:12px;">← Quay lại bảng tổng hợp</button>' +
+      '<div class="grp-card">' +
+      '<div class="grp-head"><h2>🪑 Sơ đồ lớp</h2></div>' +
+      '<p class="hint">Kéo — thả 1 tên vào 1 chỗ khác để đổi chỗ cho nhau. Thay đổi lưu cho cả lớp cùng xem.</p>' +
+      '<div class="gv-desk">🧑‍🏫 Bàn giáo viên</div>' +
+      '<div class="seating-rows">'+rowsHtml+'</div>' +
+      '</div>';
+  }
+
+  document.getElementById("groupSections").addEventListener("dragstart", function(e){
+    var seat = e.target.closest(".seat[data-seat]");
+    if(!seat) return;
+    dragSeatIndex = Number(seat.dataset.seat);
+    e.dataTransfer.effectAllowed = "move";
+  });
+  document.getElementById("groupSections").addEventListener("dragover", function(e){
+    var seat = e.target.closest(".seat[data-seat]");
+    if(!seat || !seatingOpen) return;
+    e.preventDefault();
+    seat.classList.add("dragover");
+  });
+  document.getElementById("groupSections").addEventListener("dragleave", function(e){
+    var seat = e.target.closest(".seat[data-seat]");
+    if(seat) seat.classList.remove("dragover");
+  });
+  document.getElementById("groupSections").addEventListener("drop", function(e){
+    var seat = e.target.closest(".seat[data-seat]");
+    if(!seat || !seatingOpen || dragSeatIndex === null) return;
+    e.preventDefault();
+    seat.classList.remove("dragover");
+    var toIdx = Number(seat.dataset.seat);
+    var fromIdx = dragSeatIndex;
+    dragSeatIndex = null;
+    if(toIdx === fromIdx) return;
+    var a = seatingData[fromIdx] || null;
+    var b = seatingData[toIdx] || null;
+    if(b) seatingData[fromIdx] = b; else delete seatingData[fromIdx];
+    if(a) seatingData[toIdx] = a; else delete seatingData[toIdx];
+    renderSeating();
+    rpc("bcs_set_seat", {p_password: session.pw, p_seat_index: fromIdx, p_student_name: b}).catch(function(){});
+    rpc("bcs_set_seat", {p_password: session.pw, p_seat_index: toIdx, p_student_name: a}).catch(function(){});
+  });
+
   document.getElementById("groupSections").addEventListener("change", function(e){
     var t = e.target;
     if(t.id === "bbDate"){ baoBaiDate = t.value || toDateInputVal(new Date()); renderScreen(); return; }
@@ -825,6 +928,7 @@
     }
     if(e.target.closest("[data-action='open-baobai']")){
       baoBaiOpen = true;
+      seatingOpen = false;
       currentCell = null;
       editingNoteId = null;
       expandedThongBaoId = null;
@@ -832,9 +936,17 @@
       renderScreen();
       return;
     }
+    if(e.target.closest("[data-action='open-seating']")){
+      seatingOpen = true;
+      baoBaiOpen = false;
+      currentCell = null;
+      loadSeatingAndRender();
+      return;
+    }
     if(e.target.closest("[data-action='back-matrix']")){
       currentCell = null;
       baoBaiOpen = false;
+      seatingOpen = false;
       editingNoteId = null;
       expandedThongBaoId = null;
       renderScreen();
@@ -1045,6 +1157,7 @@
     editingNoteId = null;
     currentCell = null;
     baoBaiOpen = false;
+    seatingOpen = false;
     showScreen("screenLogin");
   });
 
