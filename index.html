@@ -51,10 +51,10 @@
   .mc-tag{font-size:0.68rem; font-weight:700; color:var(--accent-strong); margin-top:2px;}
   .mc-tag.locked{color:var(--ink-faint);}
   .gv-desk{max-width:220px; margin:0 auto 22px; text-align:center; background:var(--surface-3); border:1.5px solid var(--border-strong); border-radius:var(--radius-sm); padding:14px; font-weight:700; color:var(--ink);}
-  .seating-rows{display:flex; flex-direction:column; gap:18px;}
-  .seating-row{display:flex; gap:10px; flex-wrap:wrap; justify-content:center;}
-  .seating-desk{display:flex; gap:2px; border:1.5px solid var(--border-strong); border-radius:var(--radius-sm); overflow:hidden; background:var(--border);}
-  .seat{width:96px; min-height:52px; background:var(--surface); padding:6px 8px; font-size:0.78rem; font-weight:600; color:var(--ink); display:flex; align-items:center; justify-content:center; text-align:center; cursor:grab; user-select:none; line-height:1.25;}
+  .seating-rows{display:flex; flex-direction:column; gap:20px; overflow-x:auto; padding-bottom:4px;}
+  .seating-row{display:flex; gap:8px; flex-wrap:nowrap; justify-content:center; width:max-content; margin:0 auto;}
+  .seating-desk{display:flex; gap:2px; flex:none; border:1.5px solid var(--border-strong); border-radius:var(--radius-sm); overflow:hidden; background:var(--border);}
+  .seat{width:76px; min-height:52px; flex:none; background:var(--surface); padding:6px 6px; font-size:0.72rem; font-weight:600; color:var(--ink); display:flex; align-items:center; justify-content:center; text-align:center; cursor:grab; user-select:none; line-height:1.2;}
   .seat.empty{color:var(--ink-faint); font-weight:500; font-style:italic;}
   .seat.dragover{background:var(--accent-soft); outline:2px dashed var(--accent);}
   .seat:active{cursor:grabbing;}
