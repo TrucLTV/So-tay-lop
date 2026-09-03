@@ -180,7 +180,23 @@
     <div class="sub-tabs" id="adminSubTabs">
       <button class="active" data-sub="roles">Quản lý ban cán sự</button>
       <button data-sub="summary">Tổng kết theo tuần</button>
+      <button data-sub="seating">Sơ đồ lớp</button>
       <button data-sub="account">Tài khoản</button>
+    </div>
+
+    <div id="sub-seating" style="display:none;">
+      <div class="card">
+        <div class="grp-head"><h2>🪑 Sơ đồ lớp (GV chỉnh sửa)</h2></div>
+        <p class="hint">Kéo — thả 1 tên vào 1 chỗ khác để đổi chỗ. Lưu chung với sơ đồ bên trang ban cán sự (bên đó chỉ xem, không kéo thả được).</p>
+        <div id="adminSeatingGrid"></div>
+      </div>
+      <div class="card">
+        <h2>Ghi chú sơ đồ lớp</h2>
+        <p class="hint">Ví dụ: 2 học sinh không nên ngồi cạnh nhau, học sinh cận nặng không xếp xa bảng…</p>
+        <div class="field"><textarea id="seatingNotes" placeholder="Ghi chú, lưu ý khi xếp chỗ…"></textarea></div>
+        <button class="btn primary" id="btnSaveSeatingNotes" style="width:auto;">Lưu ghi chú</button>
+        <div class="msg" id="seatingNotesMsg"></div>
+      </div>
     </div>
 
     <div id="sub-roles">
@@ -843,8 +859,8 @@
   ];
   function seatHtml(idx, color){
     var name = seatingData[idx];
-    var style = "background:"+color.bg+"; border-color:"+color.border+"; color:"+color.text+";";
-    return '<div class="seat'+(name?"":" empty")+'" draggable="true" data-seat="'+idx+'" style="'+style+'">'+(name?esc(name):"Trống")+'</div>';
+    var style = "background:"+color.bg+"; border-color:"+color.border+"; color:"+color.text+"; cursor:default;";
+    return '<div class="seat'+(name?"":" empty")+'" style="'+style+'">'+(name?esc(name):"Trống")+'</div>';
   }
 
   function renderSeating(){
@@ -863,7 +879,7 @@
       '<button class="btn ghost sm" data-action="back-matrix" style="margin-bottom:12px;">← Quay lại bảng tổng hợp</button>' +
       '<div class="grp-card">' +
       '<div class="grp-head"><h2>🪑 Sơ đồ lớp</h2></div>' +
-      '<p class="hint">Kéo — thả 1 tên vào 1 chỗ khác để đổi chỗ cho nhau. Thay đổi lưu cho cả lớp cùng xem.</p>' +
+      '<p class="hint">Chỉ xem — sơ đồ do giáo viên xếp và chỉnh sửa.</p>' +
       '<div class="gv-desk">🧑‍🏫 Bàn giáo viên</div>' +
       '<div class="seating-rows">'+rowsHtml+'</div>' +
       '</div>';
@@ -1223,7 +1239,8 @@
   function switchAdminSub(name){
     document.getElementById("adminSubTabs").style.display = "";
     document.querySelectorAll(".sub-tabs button[data-sub]").forEach(function(b){ b.classList.toggle("active", b.dataset.sub===name); });
-    ["roles","summary","account","studentProfile"].forEach(function(s){ document.getElementById("sub-"+s).style.display = (s===name)?"":"none"; });
+    ["roles","summary","seating","account","studentProfile"].forEach(function(s){ document.getElementById("sub-"+s).style.display = (s===name)?"":"none"; });
+    if(name === "seating") loadAdminSeatingAndRender();
   }
 
   // ---- role scope checklist (main groups only; sub-loại nằm ở CATEGORY_GROUPS, không chọn lẻ ở đây) ----
@@ -1733,6 +1750,94 @@
       } else {
         msg.className="msg err"; msg.textContent="Không xoá được.";
       }
+    }).catch(function(){ btn.disabled=false; msg.className="msg err"; msg.textContent="Lỗi kết nối."; });
+  });
+
+  // ---- Sơ đồ lớp (GV chỉnh sửa được, dùng mật khẩu quản trị) ----
+  var adminSeatingData = {};
+  var adminDragSeatIndex = null;
+
+  function adminSeatHtml(idx, color){
+    var name = adminSeatingData[idx];
+    var style = "background:"+color.bg+"; border-color:"+color.border+"; color:"+color.text+";";
+    return '<div class="seat'+(name?"":" empty")+'" draggable="true" data-seat="'+idx+'" style="'+style+'">'+(name?esc(name):"Trống")+'</div>';
+  }
+
+  function renderAdminSeatingGrid(){
+    var rowsHtml = "";
+    for(var row=0; row<SEATING_ROWS; row++){
+      var color = SEATING_TO_COLORS[row % SEATING_TO_COLORS.length];
+      var desksHtml = "";
+      for(var desk=0; desk<SEATING_DESKS_PER_ROW; desk++){
+        var i1 = row*SEATING_DESKS_PER_ROW*2 + desk*2;
+        var i2 = i1+1;
+        desksHtml += '<div class="seating-desk" style="border-color:'+color.border+'; background:'+color.border+';">'+adminSeatHtml(i1,color)+adminSeatHtml(i2,color)+'</div>';
+      }
+      rowsHtml += '<div class="seating-row">'+desksHtml+'</div>';
+    }
+    document.getElementById("adminSeatingGrid").innerHTML =
+      '<div class="gv-desk">🧑‍🏫 Bàn giáo viên</div><div class="seating-rows">'+rowsHtml+'</div>';
+  }
+
+  function loadAdminSeatingAndRender(){
+    document.getElementById("adminSeatingGrid").innerHTML = '<div class="empty">Đang tải…</div>';
+    rpc("bcs_admin_get_seating", {p_admin_password: adminSession.password}).then(function(res){
+      if(!res || !res.ok){ document.getElementById("adminSeatingGrid").innerHTML = '<div class="empty">Không tải được.</div>'; return; }
+      adminSeatingData = {};
+      var notesText = "";
+      (res.seats || []).forEach(function(s){
+        if(s.seat_index === -1){ notesText = s.student_name || ""; return; }
+        if(s.student_name) adminSeatingData[s.seat_index] = s.student_name;
+      });
+      document.getElementById("seatingNotes").value = notesText;
+      renderAdminSeatingGrid();
+    }).catch(function(){ document.getElementById("adminSeatingGrid").innerHTML = '<div class="empty">Lỗi kết nối.</div>'; });
+  }
+
+  document.getElementById("adminSeatingGrid").addEventListener("dragstart", function(e){
+    var seat = e.target.closest(".seat[data-seat]");
+    if(!seat) return;
+    adminDragSeatIndex = Number(seat.dataset.seat);
+    e.dataTransfer.effectAllowed = "move";
+  });
+  document.getElementById("adminSeatingGrid").addEventListener("dragover", function(e){
+    var seat = e.target.closest(".seat[data-seat]");
+    if(!seat) return;
+    e.preventDefault();
+    seat.classList.add("dragover");
+  });
+  document.getElementById("adminSeatingGrid").addEventListener("dragleave", function(e){
+    var seat = e.target.closest(".seat[data-seat]");
+    if(seat) seat.classList.remove("dragover");
+  });
+  document.getElementById("adminSeatingGrid").addEventListener("drop", function(e){
+    var seat = e.target.closest(".seat[data-seat]");
+    if(!seat || adminDragSeatIndex === null) return;
+    e.preventDefault();
+    seat.classList.remove("dragover");
+    var toIdx = Number(seat.dataset.seat);
+    var fromIdx = adminDragSeatIndex;
+    adminDragSeatIndex = null;
+    if(toIdx === fromIdx) return;
+    var a = adminSeatingData[fromIdx] || null;
+    var b = adminSeatingData[toIdx] || null;
+    if(b) adminSeatingData[fromIdx] = b; else delete adminSeatingData[fromIdx];
+    if(a) adminSeatingData[toIdx] = a; else delete adminSeatingData[toIdx];
+    renderAdminSeatingGrid();
+    rpc("bcs_admin_set_seat", {p_admin_password: adminSession.password, p_seat_index: fromIdx, p_student_name: b}).catch(function(){});
+    rpc("bcs_admin_set_seat", {p_admin_password: adminSession.password, p_seat_index: toIdx, p_student_name: a}).catch(function(){});
+  });
+
+  document.getElementById("btnSaveSeatingNotes").addEventListener("click", function(){
+    var msg = document.getElementById("seatingNotesMsg");
+    var text = document.getElementById("seatingNotes").value.trim();
+    var btn = document.getElementById("btnSaveSeatingNotes");
+    btn.disabled = true;
+    msg.className="msg"; msg.textContent="Đang lưu…";
+    rpc("bcs_admin_set_seat", {p_admin_password: adminSession.password, p_seat_index: -1, p_student_name: text}).then(function(res){
+      btn.disabled = false;
+      if(res && res.ok){ msg.className="msg ok"; msg.textContent="✓ Đã lưu."; }
+      else { msg.className="msg err"; msg.textContent="Không lưu được."; }
     }).catch(function(){ btn.disabled=false; msg.className="msg err"; msg.textContent="Lỗi kết nối."; });
   });
 
