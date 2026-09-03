@@ -101,7 +101,7 @@
     #printArea, #printArea *{visibility:visible;}
     #printArea{position:absolute; top:0; left:0; width:100%;}
     #printReportHeader{display:block; margin-bottom:16px;}
-    .btn, .sub-tabs, #screenLogin, .brand, footer.foot{display:none !important;}
+    .btn, .sub-tabs, #screenLogin, .brand, footer.foot, #studentGridSection{display:none !important;}
     .card{box-shadow:none; border:1px solid #ccc;}
   }
   .stat{background:var(--surface-2); border:1px solid var(--border); border-radius:var(--radius-sm); padding:10px 12px;}
@@ -221,13 +221,15 @@
         </div>
         <div class="stat-grid" id="summaryStats"></div>
         <div class="chart-box"><canvas id="statsChart"></canvas></div>
-        <h3 style="margin-bottom:8px; font-size:0.9rem;">Theo học sinh <span class="faint" style="font-weight:500;">(bấm vào tên để xem chi tiết)</span></h3>
-        <div class="student-legend">
-          <span>Ít</span>
-          <span class="swatches" id="studentLegendSwatches"></span>
-          <span>Nhiều</span>
+        <div id="studentGridSection">
+          <h3 style="margin-bottom:8px; font-size:0.9rem;">Theo học sinh <span class="faint" style="font-weight:500;">(bấm vào tên để xem chi tiết)</span></h3>
+          <div class="student-legend">
+            <span>Ít</span>
+            <span class="swatches" id="studentLegendSwatches"></span>
+            <span>Nhiều</span>
+          </div>
+          <div id="summaryByStudent" class="student-grid" style="margin-bottom:8px;"></div>
         </div>
-        <div id="summaryByStudent" class="student-grid" style="margin-bottom:8px;"></div>
         <div id="summaryDetailSection" style="display:none;">
           <div class="row" id="summaryStudentFilterRow" style="margin:10px 0 4px;">
             <span class="faint">Đang xem chi tiết của: <strong id="summaryStudentFilterName"></strong></span>
