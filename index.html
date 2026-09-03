@@ -53,9 +53,9 @@
   .gv-desk{max-width:220px; margin:0 auto 22px; text-align:center; background:var(--surface-3); border:1.5px solid var(--border-strong); border-radius:var(--radius-sm); padding:14px; font-weight:700; color:var(--ink);}
   .seating-rows{display:flex; flex-direction:column; gap:20px; overflow-x:auto; padding-bottom:4px;}
   .seating-row{display:flex; gap:8px; flex-wrap:nowrap; justify-content:center; width:max-content; margin:0 auto;}
-  .seating-desk{display:flex; gap:2px; flex:none; border:1.5px solid var(--border-strong); border-radius:var(--radius-sm); overflow:hidden; background:var(--border);}
-  .seat{width:76px; min-height:52px; flex:none; background:var(--surface); padding:6px 6px; font-size:0.72rem; font-weight:600; color:var(--ink); display:flex; align-items:center; justify-content:center; text-align:center; cursor:grab; user-select:none; line-height:1.2;}
-  .seat.empty{color:var(--ink-faint); font-weight:500; font-style:italic;}
+  .seating-desk{display:flex; gap:3px; flex:none; border:2px solid var(--border-strong); border-radius:var(--radius-sm); overflow:hidden; background:var(--border);}
+  .seat{width:112px; min-height:72px; flex:none; background:var(--surface); padding:8px 8px; font-size:0.88rem; font-weight:700; color:var(--ink); display:flex; align-items:center; justify-content:center; text-align:center; cursor:grab; user-select:none; line-height:1.28;}
+  .seat.empty{font-weight:500; font-style:italic; opacity:0.55;}
   .seat.dragover{background:var(--accent-soft); outline:2px dashed var(--accent);}
   .seat:active{cursor:grabbing;}
   .note-item .nt-actions{margin-top:6px; display:flex; gap:6px;}
@@ -835,19 +835,27 @@
     });
   }
 
-  function seatHtml(idx){
+  var SEATING_TO_COLORS = [
+    { bg:"#DEEBE8", border:"#2F6F68", text:"#235550" },
+    { bg:"#F5E9D3", border:"#A9700F", text:"#8A5C0C" },
+    { bg:"#E1EFE1", border:"#3F7D4F", text:"#336740" },
+    { bg:"#F5E0DA", border:"#B0402F", text:"#8C3226" }
+  ];
+  function seatHtml(idx, color){
     var name = seatingData[idx];
-    return '<div class="seat'+(name?"":" empty")+'" draggable="true" data-seat="'+idx+'">'+(name?esc(name):"Trống")+'</div>';
+    var style = "background:"+color.bg+"; border-color:"+color.border+"; color:"+color.text+";";
+    return '<div class="seat'+(name?"":" empty")+'" draggable="true" data-seat="'+idx+'" style="'+style+'">'+(name?esc(name):"Trống")+'</div>';
   }
 
   function renderSeating(){
     var rowsHtml = "";
     for(var row=0; row<SEATING_ROWS; row++){
+      var color = SEATING_TO_COLORS[row % SEATING_TO_COLORS.length];
       var desksHtml = "";
       for(var desk=0; desk<SEATING_DESKS_PER_ROW; desk++){
         var i1 = row*SEATING_DESKS_PER_ROW*2 + desk*2;
         var i2 = i1+1;
-        desksHtml += '<div class="seating-desk">'+seatHtml(i1)+seatHtml(i2)+'</div>';
+        desksHtml += '<div class="seating-desk" style="border-color:'+color.border+'; background:'+color.border+';">'+seatHtml(i1,color)+seatHtml(i2,color)+'</div>';
       }
       rowsHtml += '<div class="seating-row">'+desksHtml+'</div>';
     }
