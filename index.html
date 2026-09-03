@@ -420,6 +420,10 @@
     m.textContent = t; m.className = "msg" + (err?" err":"");
   }
 
+  document.getElementById("loginPw").addEventListener("keydown", function(e){
+    if(e.key === "Enter"){ e.preventDefault(); document.getElementById("btnLogin").click(); }
+  });
+
   document.getElementById("btnLogin").addEventListener("click", function(){
     var pw = document.getElementById("loginPw").value;
     if(!pw){ setLoginMsg("Vui lòng nhập mật khẩu.", true); return; }
