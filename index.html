@@ -41,10 +41,11 @@
   .filter-bar .btn{white-space:nowrap;}
   .sections-grid{display:grid; grid-template-columns:repeat(auto-fit, minmax(460px, 1fr)); gap:16px; align-items:start;}
   .sections-grid .grp-card{margin-bottom:0;}
-  .matrix-table{width:100%; border-collapse:separate; border-spacing:8px;}
+  .matrix-table{width:100%; table-layout:fixed; border-collapse:separate; border-spacing:8px;}
   .matrix-table th{background:none; border:none; padding:6px 10px; text-align:left; font-size:0.78rem; text-transform:none; letter-spacing:0; color:var(--ink-muted); position:static;}
-  .matrix-rowhead{font-weight:700; color:var(--ink); font-size:0.9rem; white-space:nowrap; vertical-align:middle;}
-  .matrix-cell{background:var(--surface); border:1.5px solid var(--border-strong); border-radius:var(--radius-sm); padding:14px 10px; text-align:center; cursor:pointer; transition:transform .08s ease, box-shadow .08s ease; min-width:120px;}
+  .matrix-table th:first-child, .matrix-table td:first-child{width:120px;}
+  .matrix-rowhead{font-weight:700; color:var(--ink); font-size:0.9rem; white-space:normal; vertical-align:middle;}
+  .matrix-cell{background:var(--surface); border:1.5px solid var(--border-strong); border-radius:var(--radius-sm); padding:14px 10px; text-align:center; cursor:pointer; transition:transform .08s ease, box-shadow .08s ease;}
   .matrix-cell:hover{box-shadow:var(--shadow); transform:translateY(-1px); border-color:var(--accent);}
   .mc-count{font-family:var(--font-display); font-weight:800; font-size:1.5rem; color:var(--ink);}
   .mc-tag{font-size:0.68rem; font-weight:700; color:var(--accent-strong); margin-top:2px;}
