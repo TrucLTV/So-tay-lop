@@ -54,7 +54,8 @@
   .seating-rows{display:flex; flex-direction:column; gap:20px; overflow-x:auto; padding-bottom:4px;}
   .seating-row{display:flex; gap:8px; flex-wrap:nowrap; justify-content:center; width:max-content; margin:0 auto;}
   .seating-desk{display:flex; gap:3px; flex:none; border:2px solid var(--border-strong); border-radius:var(--radius-sm); overflow:hidden; background:var(--border);}
-  .seat{width:112px; min-height:72px; flex:none; background:var(--surface); padding:8px 8px; font-size:0.88rem; font-weight:700; color:var(--ink); display:flex; align-items:center; justify-content:center; text-align:center; cursor:grab; user-select:none; line-height:1.28;}
+  .seat{position:relative; width:112px; min-height:72px; flex:none; background:var(--surface); padding:8px 8px; font-size:0.88rem; font-weight:700; color:var(--ink); display:flex; align-items:center; justify-content:center; text-align:center; cursor:grab; user-select:none; line-height:1.28;}
+  .seat-group-badge{position:absolute; top:2px; left:4px; font-size:0.64rem; font-weight:800; opacity:0.6;}
   .seat.empty{font-weight:500; font-style:italic; opacity:0.55;}
   .seat.dragover{background:var(--accent-soft); outline:2px dashed var(--accent);}
   .seat:active{cursor:grabbing;}
@@ -216,6 +217,11 @@
         <button class="btn primary" id="btnSaveSpecialNote" style="width:auto;">Lưu</button>
         <div class="msg" id="specialNoteMsg"></div>
         <div id="specialNoteList" style="margin-top:12px;"></div>
+      </div>
+      <div class="card">
+        <h2>Gán Tổ cho học sinh</h2>
+        <p class="hint">Khi kéo-thả xếp học sinh sang dãy khác với các bạn cùng tổ, hệ thống sẽ cảnh báo.</p>
+        <div id="groupAssignList"></div>
       </div>
     </div>
 
@@ -1778,6 +1784,7 @@
   var adminDragSeatIndex = null;
   var adminAvoidPairs = [];   // [{id, a, b}]
   var adminSpecialNotes = {}; // { studentName: {id, note} }
+  var adminStudentGroups = {}; // { studentName: groupNo (1-4) }
 
   function seatRowCol(idx){
     var cols = SEATING_DESKS_PER_ROW*2;
@@ -1808,20 +1815,43 @@
     return conflicts;
   }
 
-  function seatingStudentOptionsHtml(){
+  function findGroupConflict(seatIdx, studentName, snapshot){
+    if(!studentName) return null;
+    var g = adminStudentGroups[studentName];
+    if(!g) return null;
+    var myRow = seatRowCol(seatIdx).row;
+    var mismatched = [];
+    Object.keys(snapshot).forEach(function(idxStr){
+      var idx = Number(idxStr);
+      if(idx === seatIdx) return;
+      var n = snapshot[idx];
+      if(!n || n === studentName) return;
+      if(adminStudentGroups[n] === g && seatRowCol(idx).row !== myRow) mismatched.push(n);
+    });
+    if(!mismatched.length) return null;
+    return studentName+" (Tổ "+g+") sẽ khác dãy với bạn cùng tổ: "+mismatched.join(", ");
+  }
+
+  function allStudentNames(){
     var names = DEFAULT_STUDENTS.slice();
     Object.keys(adminSeatingData).forEach(function(idx){ var n=adminSeatingData[idx]; if(names.indexOf(n)===-1) names.push(n); });
     names.sort(function(a,b){ return a.localeCompare(b,"vi"); });
-    return names.map(function(n){ return '<option value="'+esc(n)+'">'+esc(n)+'</option>'; }).join("");
+    return names;
+  }
+
+  function seatingStudentOptionsHtml(){
+    return allStudentNames().map(function(n){ return '<option value="'+esc(n)+'">'+esc(n)+'</option>'; }).join("");
   }
 
   function adminSeatHtml(idx, color){
     var name = adminSeatingData[idx];
     var special = name ? adminSpecialNotes[name] : null;
+    var group = name ? adminStudentGroups[name] : null;
     var style = "background:"+color.bg+"; border-color:"+color.border+"; color:"+color.text+";";
     if(special) style += " box-shadow: inset 0 0 0 3px #B0402F;";
     var title = special ? ' title="'+esc(special.note)+'"' : '';
-    return '<div class="seat'+(name?"":" empty")+(special?" special":"")+'" draggable="true" data-seat="'+idx+'"'+title+' style="'+style+'">'+(name?esc(name):"Trống")+(special?' ⚠':'')+'</div>';
+    var badge = group ? '<span class="seat-group-badge">T'+group+'</span>' : '';
+    return '<div class="seat'+(name?"":" empty")+(special?" special":"")+'" draggable="true" data-seat="'+idx+'"'+title+' style="'+style+'">'+badge+(name?esc(name):"Trống")+(special?' ⚠':'')+'</div>';
   }
 
   function renderAdminSeatingGrid(){
@@ -1873,10 +1903,41 @@
     }).catch(function(){});
   }
 
+  function renderGroupAssignList(){
+    var el = document.getElementById("groupAssignList");
+    el.innerHTML = allStudentNames().map(function(n){
+      var g = adminStudentGroups[n] || "";
+      var opts = ['<option value=""'+(g===""?" selected":"")+'>Chưa gán</option>'];
+      for(var i=1;i<=4;i++) opts.push('<option value="'+i+'"'+(g===i?" selected":"")+'>Tổ '+i+'</option>');
+      return '<div class="role-row"><div class="rn">'+esc(n)+'</div><select class="group-select" data-student="'+esc(n)+'" style="width:auto;">'+opts.join("")+'</select></div>';
+    }).join("");
+  }
+
+  function loadStudentGroups(){
+    return rpc("bcs_admin_get_student_groups", {p_admin_password: adminSession.password}).then(function(res){
+      adminStudentGroups = {};
+      if(res && res.ok){
+        (res.groups||[]).forEach(function(g){ adminStudentGroups[g.student_name] = g.group_no; });
+      }
+      renderGroupAssignList();
+    }).catch(function(){});
+  }
+
+  document.getElementById("groupAssignList").addEventListener("change", function(e){
+    var sel = e.target.closest(".group-select");
+    if(!sel) return;
+    var name = sel.dataset.student;
+    var val = sel.value ? Number(sel.value) : null;
+    adminStudentGroups[name] = val;
+    rpc("bcs_admin_set_student_group", {p_admin_password: adminSession.password, p_student_name: name, p_group_no: val}).then(function(){
+      renderAdminSeatingGrid();
+    }).catch(function(){});
+  });
+
   function loadAdminSeatingAndRender(){
     document.getElementById("adminSeatingGrid").innerHTML = '<div class="empty">Đang tải…</div>';
     var seatingP = rpc("bcs_admin_get_seating", {p_admin_password: adminSession.password});
-    Promise.all([seatingP, loadSeatingRules()]).then(function(results){
+    Promise.all([seatingP, loadSeatingRules(), loadStudentGroups()]).then(function(results){
       var res = results[0];
       if(!res || !res.ok){ document.getElementById("adminSeatingGrid").innerHTML = '<div class="empty">Không tải được.</div>'; return; }
       adminSeatingData = {};
@@ -1889,6 +1950,7 @@
       document.getElementById("avoidStudentA").innerHTML = seatingStudentOptionsHtml();
       document.getElementById("avoidStudentB").innerHTML = seatingStudentOptionsHtml();
       document.getElementById("specialStudent").innerHTML = seatingStudentOptionsHtml();
+      renderGroupAssignList();
       renderAdminSeatingGrid();
     }).catch(function(){ document.getElementById("adminSeatingGrid").innerHTML = '<div class="empty">Lỗi kết nối.</div>'; });
   }
@@ -1928,8 +1990,12 @@
     var lines = [];
     findAvoidConflicts(toIdx, a, snapshot).forEach(function(n){ lines.push(a+" — "+n); });
     findAvoidConflicts(fromIdx, b, snapshot).forEach(function(n){ lines.push(b+" — "+n); });
+    var gc1 = findGroupConflict(toIdx, a, snapshot);
+    var gc2 = findGroupConflict(fromIdx, b, snapshot);
+    if(gc1) lines.push(gc1);
+    if(gc2) lines.push(gc2);
     if(lines.length){
-      if(!confirm("⚠️ Vướng cặp không nên ngồi cạnh nhau:\n"+lines.join("\n")+"\n\nVẫn đổi chỗ?")) return;
+      if(!confirm("⚠️ Vướng tiêu chí xếp chỗ:\n"+lines.join("\n")+"\n\nVẫn đổi chỗ?")) return;
     }
 
     if(b) adminSeatingData[fromIdx] = b; else delete adminSeatingData[fromIdx];
