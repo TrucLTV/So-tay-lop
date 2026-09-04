@@ -197,6 +197,26 @@
         <button class="btn primary" id="btnSaveSeatingNotes" style="width:auto;">Lưu ghi chú</button>
         <div class="msg" id="seatingNotesMsg"></div>
       </div>
+      <div class="card">
+        <h2>Cặp không nên ngồi cạnh nhau</h2>
+        <p class="hint">Khi kéo-thả mà vướng cặp này (cạnh nhau: trên/dưới/trái/phải), hệ thống sẽ cảnh báo lý do, GV vẫn có thể xác nhận đổi nếu muốn.</p>
+        <div class="field-row">
+          <div class="field"><label>Học sinh 1</label><select id="avoidStudentA"></select></div>
+          <div class="field"><label>Học sinh 2</label><select id="avoidStudentB"></select></div>
+        </div>
+        <button class="btn primary" id="btnAddAvoidPair" style="width:auto;">+ Thêm cặp</button>
+        <div class="msg" id="avoidPairMsg"></div>
+        <div id="avoidPairList" style="margin-top:12px;"></div>
+      </div>
+      <div class="card">
+        <h2>Học sinh cần lưu ý đặc biệt</h2>
+        <p class="hint">Tên sẽ được highlight trong sơ đồ, kèm ghi chú (chỉ GV xem khi bấm vào).</p>
+        <div class="field"><label>Học sinh</label><select id="specialStudent"></select></div>
+        <div class="field"><label>Ghi chú</label><textarea id="specialNote" placeholder="VD: cận nặng, cần ngồi gần bảng…"></textarea></div>
+        <button class="btn primary" id="btnSaveSpecialNote" style="width:auto;">Lưu</button>
+        <div class="msg" id="specialNoteMsg"></div>
+        <div id="specialNoteList" style="margin-top:12px;"></div>
+      </div>
     </div>
 
     <div id="sub-roles">
@@ -1756,11 +1776,52 @@
   // ---- Sơ đồ lớp (GV chỉnh sửa được, dùng mật khẩu quản trị) ----
   var adminSeatingData = {};
   var adminDragSeatIndex = null;
+  var adminAvoidPairs = [];   // [{id, a, b}]
+  var adminSpecialNotes = {}; // { studentName: {id, note} }
+
+  function seatRowCol(idx){
+    var cols = SEATING_DESKS_PER_ROW*2;
+    return { row: Math.floor(idx/cols), col: idx%cols };
+  }
+  function seatNeighbors(idx){
+    var cols = SEATING_DESKS_PER_ROW*2;
+    var rc = seatRowCol(idx);
+    var out = [];
+    if(rc.row>0) out.push((rc.row-1)*cols+rc.col);
+    if(rc.row<SEATING_ROWS-1) out.push((rc.row+1)*cols+rc.col);
+    if(rc.col>0) out.push(rc.row*cols+(rc.col-1));
+    if(rc.col<cols-1) out.push(rc.row*cols+(rc.col+1));
+    return out;
+  }
+  function findAvoidConflicts(seatIdx, studentName, snapshot){
+    if(!studentName) return [];
+    var conflicts = [];
+    seatNeighbors(seatIdx).forEach(function(nIdx){
+      var neighborName = snapshot[nIdx];
+      if(!neighborName) return;
+      adminAvoidPairs.forEach(function(p){
+        if((p.a===studentName && p.b===neighborName) || (p.b===studentName && p.a===neighborName)){
+          conflicts.push(neighborName);
+        }
+      });
+    });
+    return conflicts;
+  }
+
+  function seatingStudentOptionsHtml(){
+    var names = DEFAULT_STUDENTS.slice();
+    Object.keys(adminSeatingData).forEach(function(idx){ var n=adminSeatingData[idx]; if(names.indexOf(n)===-1) names.push(n); });
+    names.sort(function(a,b){ return a.localeCompare(b,"vi"); });
+    return names.map(function(n){ return '<option value="'+esc(n)+'">'+esc(n)+'</option>'; }).join("");
+  }
 
   function adminSeatHtml(idx, color){
     var name = adminSeatingData[idx];
+    var special = name ? adminSpecialNotes[name] : null;
     var style = "background:"+color.bg+"; border-color:"+color.border+"; color:"+color.text+";";
-    return '<div class="seat'+(name?"":" empty")+'" draggable="true" data-seat="'+idx+'" style="'+style+'">'+(name?esc(name):"Trống")+'</div>';
+    if(special) style += " box-shadow: inset 0 0 0 3px #B0402F;";
+    var title = special ? ' title="'+esc(special.note)+'"' : '';
+    return '<div class="seat'+(name?"":" empty")+(special?" special":"")+'" draggable="true" data-seat="'+idx+'"'+title+' style="'+style+'">'+(name?esc(name):"Trống")+(special?' ⚠':'')+'</div>';
   }
 
   function renderAdminSeatingGrid(){
@@ -1779,9 +1840,44 @@
       '<div class="gv-desk">🧑‍🏫 Bàn giáo viên</div><div class="seating-rows">'+rowsHtml+'</div>';
   }
 
+  function renderAvoidPairList(){
+    var el = document.getElementById("avoidPairList");
+    el.innerHTML = adminAvoidPairs.length ? adminAvoidPairs.map(function(p){
+      return '<div class="role-row"><div class="rn">'+esc(p.a)+' ↔ '+esc(p.b)+'</div>'+
+        '<button class="btn sm danger" data-delrule="'+p.id+'">Xoá</button></div>';
+    }).join("") : '<div class="empty">Chưa có cặp nào.</div>';
+  }
+
+  function renderSpecialNoteList(){
+    var el = document.getElementById("specialNoteList");
+    var names = Object.keys(adminSpecialNotes);
+    el.innerHTML = names.length ? names.map(function(n){
+      var s = adminSpecialNotes[n];
+      return '<div class="role-row"><div><div class="rn">'+esc(n)+'</div><div class="rp">'+esc(s.note)+'</div></div>'+
+        '<button class="btn sm danger" data-delrule="'+s.id+'">Xoá</button></div>';
+    }).join("") : '<div class="empty">Chưa có học sinh nào.</div>';
+  }
+
+  function loadSeatingRules(){
+    return rpc("bcs_admin_get_seating_rules", {p_admin_password: adminSession.password}).then(function(res){
+      adminAvoidPairs = [];
+      adminSpecialNotes = {};
+      if(res && res.ok){
+        (res.rules||[]).forEach(function(r){
+          if(r.rule_type === "avoid") adminAvoidPairs.push({id:r.id, a:r.student_a, b:r.student_b});
+          else if(r.rule_type === "special") adminSpecialNotes[r.student_a] = {id:r.id, note:r.note||""};
+        });
+      }
+      renderAvoidPairList();
+      renderSpecialNoteList();
+    }).catch(function(){});
+  }
+
   function loadAdminSeatingAndRender(){
     document.getElementById("adminSeatingGrid").innerHTML = '<div class="empty">Đang tải…</div>';
-    rpc("bcs_admin_get_seating", {p_admin_password: adminSession.password}).then(function(res){
+    var seatingP = rpc("bcs_admin_get_seating", {p_admin_password: adminSession.password});
+    Promise.all([seatingP, loadSeatingRules()]).then(function(results){
+      var res = results[0];
       if(!res || !res.ok){ document.getElementById("adminSeatingGrid").innerHTML = '<div class="empty">Không tải được.</div>'; return; }
       adminSeatingData = {};
       var notesText = "";
@@ -1790,6 +1886,9 @@
         if(s.student_name) adminSeatingData[s.seat_index] = s.student_name;
       });
       document.getElementById("seatingNotes").value = notesText;
+      document.getElementById("avoidStudentA").innerHTML = seatingStudentOptionsHtml();
+      document.getElementById("avoidStudentB").innerHTML = seatingStudentOptionsHtml();
+      document.getElementById("specialStudent").innerHTML = seatingStudentOptionsHtml();
       renderAdminSeatingGrid();
     }).catch(function(){ document.getElementById("adminSeatingGrid").innerHTML = '<div class="empty">Lỗi kết nối.</div>'; });
   }
@@ -1821,6 +1920,18 @@
     if(toIdx === fromIdx) return;
     var a = adminSeatingData[fromIdx] || null;
     var b = adminSeatingData[toIdx] || null;
+
+    var snapshot = {};
+    for(var k in adminSeatingData) snapshot[k] = adminSeatingData[k];
+    if(b) snapshot[fromIdx] = b; else delete snapshot[fromIdx];
+    if(a) snapshot[toIdx] = a; else delete snapshot[toIdx];
+    var lines = [];
+    findAvoidConflicts(toIdx, a, snapshot).forEach(function(n){ lines.push(a+" — "+n); });
+    findAvoidConflicts(fromIdx, b, snapshot).forEach(function(n){ lines.push(b+" — "+n); });
+    if(lines.length){
+      if(!confirm("⚠️ Vướng cặp không nên ngồi cạnh nhau:\n"+lines.join("\n")+"\n\nVẫn đổi chỗ?")) return;
+    }
+
     if(b) adminSeatingData[fromIdx] = b; else delete adminSeatingData[fromIdx];
     if(a) adminSeatingData[toIdx] = a; else delete adminSeatingData[toIdx];
     renderAdminSeatingGrid();
@@ -1839,6 +1950,52 @@
       if(res && res.ok){ msg.className="msg ok"; msg.textContent="✓ Đã lưu."; }
       else { msg.className="msg err"; msg.textContent="Không lưu được."; }
     }).catch(function(){ btn.disabled=false; msg.className="msg err"; msg.textContent="Lỗi kết nối."; });
+  });
+
+  document.getElementById("btnAddAvoidPair").addEventListener("click", function(){
+    var msg = document.getElementById("avoidPairMsg");
+    var a = document.getElementById("avoidStudentA").value;
+    var b = document.getElementById("avoidStudentB").value;
+    if(!a || !b || a===b){ msg.className="msg err"; msg.textContent="Chọn 2 học sinh khác nhau."; return; }
+    msg.className="msg"; msg.textContent="Đang lưu…";
+    rpc("bcs_admin_add_avoid_pair", {p_admin_password: adminSession.password, p_student_a: a, p_student_b: b}).then(function(res){
+      if(res && res.ok){ msg.className="msg ok"; msg.textContent="✓ Đã thêm."; loadSeatingRules(); }
+      else { msg.className="msg err"; msg.textContent="Không thêm được."; }
+    }).catch(function(){ msg.className="msg err"; msg.textContent="Lỗi kết nối."; });
+  });
+
+  document.getElementById("btnSaveSpecialNote").addEventListener("click", function(){
+    var msg = document.getElementById("specialNoteMsg");
+    var name = document.getElementById("specialStudent").value;
+    var note = document.getElementById("specialNote").value.trim();
+    if(!name){ msg.className="msg err"; msg.textContent="Chọn học sinh."; return; }
+    if(!note){ msg.className="msg err"; msg.textContent="Vui lòng nhập ghi chú."; return; }
+    msg.className="msg"; msg.textContent="Đang lưu…";
+    rpc("bcs_admin_set_special_note", {p_admin_password: adminSession.password, p_student_name: name, p_note: note}).then(function(res){
+      if(res && res.ok){
+        msg.className="msg ok"; msg.textContent="✓ Đã lưu.";
+        document.getElementById("specialNote").value = "";
+        loadSeatingRules().then(renderAdminSeatingGrid);
+      } else { msg.className="msg err"; msg.textContent="Không lưu được."; }
+    }).catch(function(){ msg.className="msg err"; msg.textContent="Lỗi kết nối."; });
+  });
+
+  document.getElementById("avoidPairList").addEventListener("click", function(e){
+    var b = e.target.closest("[data-delrule]");
+    if(!b) return;
+    if(!confirm("Xoá cặp này?")) return;
+    rpc("bcs_admin_delete_seating_rule", {p_admin_password: adminSession.password, p_id: b.dataset.delrule}).then(function(res){
+      if(res && res.ok) loadSeatingRules(); else alert("Không xoá được.");
+    });
+  });
+
+  document.getElementById("specialNoteList").addEventListener("click", function(e){
+    var b = e.target.closest("[data-delrule]");
+    if(!b) return;
+    if(!confirm("Xoá lưu ý này?")) return;
+    rpc("bcs_admin_delete_seating_rule", {p_admin_password: adminSession.password, p_id: b.dataset.delrule}).then(function(res){
+      if(res && res.ok) loadSeatingRules().then(renderAdminSeatingGrid); else alert("Không xoá được.");
+    });
   });
 
   resetRoleForm();
