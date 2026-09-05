@@ -6,7 +6,7 @@ Dựa trên: quyết định dùng **1 hệ thống backend chung**, cho phép *
 
 ## Checklist thực hiện (tick dần khi test xong từng bước)
 
-- [ ] **M1** — Schema: bảng `bcs_classes` + cột `class_id` khắp nơi + gán dữ liệu cũ vào lớp "8A9" *(đã gửi SQL, chờ bạn chạy + xác nhận)*
+- [x] **M1** — Schema: bảng `bcs_classes` + cột `class_id` khắp nơi + gán dữ liệu cũ vào lớp "8A9" ✅ đã xác nhận (1 dòng "8A9", 0 dòng thiếu class_id)
 - [ ] **M2** — Hash mật khẩu (pgcrypto)
 - [ ] **M3** — Viết lại RPC lõi: `bcs_login`, `bcs_admin_check`
 - [ ] **M4** — Viết lại RPC ghi chú: `bcs_submit_note`, `bcs_update_note`, `bcs_delete_note`, `bcs_list_notes`
