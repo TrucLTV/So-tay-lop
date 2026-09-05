@@ -7,12 +7,12 @@ Dựa trên: quyết định dùng **1 hệ thống backend chung**, cho phép *
 ## Checklist thực hiện (tick dần khi test xong từng bước)
 
 - [x] **M1** — Schema: bảng `bcs_classes` + cột `class_id` khắp nơi + gán dữ liệu cũ vào lớp "8A9" ✅ đã xác nhận (1 dòng "8A9", 0 dòng thiếu class_id)
-- [ ] **M2** — Hash mật khẩu (pgcrypto)
-- [ ] **M3** — Viết lại RPC lõi: `bcs_login`, `bcs_admin_check`
-- [ ] **M4** — Viết lại RPC ghi chú: `bcs_submit_note`, `bcs_update_note`, `bcs_delete_note`, `bcs_list_notes`
-- [ ] **M5** — Viết lại RPC quản lý vai trò: `bcs_admin_list_roles`, `bcs_admin_upsert_role`, `bcs_admin_delete_role`, `bcs_admin_change_password`
-- [ ] **M6** — Viết lại RPC thống kê/hồ sơ: `bcs_admin_get_notes`, `bcs_admin_delete_note`, `bcs_admin_submit_remark`, `bcs_admin_get_student_notes`, `bcs_admin_submit_student_note`, `bcs_admin_reset_notes`
-- [ ] **M7** — Viết lại RPC sơ đồ lớp: `bcs_get_seating`, `bcs_set_seat`, `bcs_admin_get_seating`, `bcs_admin_set_seat`, `bcs_admin_get_seating_rules`, `bcs_admin_add_avoid_pair`, `bcs_admin_set_special_note`, `bcs_admin_delete_seating_rule`, `bcs_admin_get_student_groups`, `bcs_admin_set_student_group`
+- [x] **M2** — Hash mật khẩu (pgcrypto) ✅ + vá khẩn cấp cho các hàm ban cán sự bị sót (submit/update/delete/list note, get/set seat) cũng phải đổi sang so bằng `crypt()`
+- [x] **M3** — Viết lại RPC lõi: `bcs_login`, `bcs_admin_check` (+ `bcs_admin_class`, `bcs_admin_login` mới) ✅
+- [x] **M4** — Viết lại RPC ghi chú: `bcs_submit_note`, `bcs_update_note`, `bcs_delete_note`, `bcs_list_notes` ✅ (đã hash-safe, `bcs_list_notes`/`bcs_submit_note` đã lọc theo `class_id`)
+- [x] **M5** — RPC quản lý vai trò: `bcs_admin_list_roles`, `bcs_admin_upsert_role`, `bcs_admin_change_password` ✅ hash-safe + lọc `class_id` khi sửa vai trò. `bcs_admin_delete_role` **chưa lọc class_id** (còn hoạt động bình thường vì chỉ có 1 lớp, cần vá trước khi mời GV thứ 2)
+- [ ] **M6** — Lọc `class_id` cho RPC thống kê/hồ sơ: `bcs_admin_get_notes`, `bcs_admin_delete_note`, `bcs_admin_submit_remark`, `bcs_admin_get_student_notes`, `bcs_admin_submit_student_note`, `bcs_admin_reset_notes` *(đang hoạt động bình thường, chưa lọc theo lớp)*
+- [ ] **M7** — Lọc `class_id` cho RPC sơ đồ lớp còn lại: `bcs_admin_get_seating`, `bcs_admin_set_seat`, `bcs_admin_get_seating_rules`, `bcs_admin_add_avoid_pair`, `bcs_admin_set_special_note`, `bcs_admin_delete_seating_rule`, `bcs_admin_get_student_groups`, `bcs_admin_set_student_group` *(đang hoạt động bình thường, chưa lọc theo lớp; `bcs_get_seating`/`bcs_set_seat` phía ban cán sự đã xong ở M2)*
 - [ ] **M8** — RPC mới: `bcs_create_class`
 - [ ] **M9** — Client: bỏ hard-code "Lớp 8A9" (4 chỗ), gắn động theo `class_name`
 - [ ] **M10** — Client: màn "Tạo lớp mới" trên `screenLogin`
