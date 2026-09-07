@@ -182,6 +182,7 @@
       <button class="active" data-sub="roles">Quản lý ban cán sự</button>
       <button data-sub="summary">Tổng kết theo tuần</button>
       <button data-sub="seating">Sơ đồ lớp</button>
+      <button data-sub="gvbm">GVBM</button>
       <button data-sub="account">Tài khoản</button>
     </div>
 
@@ -316,6 +317,16 @@
     </div>
 
     <div id="sub-studentProfile" style="display:none;"></div>
+
+    <div id="sub-gvbm" style="display:none;">
+      <div class="card">
+        <h2>Giáo viên bộ môn (GVBM)</h2>
+        <p class="hint">Tên GV và số điện thoại liên hệ theo từng môn.</p>
+        <div id="gvbmList"></div>
+        <button class="btn primary" id="btnSaveGvbm" style="width:auto; margin-top:12px;">Lưu</button>
+        <div class="msg" id="gvbmMsg"></div>
+      </div>
+    </div>
 
     <div id="sub-account" style="display:none;">
       <div class="card">
@@ -1275,8 +1286,9 @@
   function switchAdminSub(name){
     document.getElementById("adminSubTabs").style.display = "";
     document.querySelectorAll(".sub-tabs button[data-sub]").forEach(function(b){ b.classList.toggle("active", b.dataset.sub===name); });
-    ["roles","summary","seating","account","studentProfile"].forEach(function(s){ document.getElementById("sub-"+s).style.display = (s===name)?"":"none"; });
+    ["roles","summary","seating","account","studentProfile","gvbm"].forEach(function(s){ document.getElementById("sub-"+s).style.display = (s===name)?"":"none"; });
     if(name === "seating") loadAdminSeatingAndRender();
+    if(name === "gvbm") loadGvbm();
   }
 
   // ---- role scope checklist (main groups only; sub-loại nằm ở CATEGORY_GROUPS, không chọn lẻ ở đây) ----
@@ -1798,6 +1810,8 @@
   var adminAvoidPairs = [];   // [{id, a, b}]
   var adminSpecialNotes = {}; // { studentName: {id, note} }
   var adminStudentGroups = {}; // { studentName: groupNo (1-4) }
+  var adminGvbm = {};   // { subject: {teacher_name, phone} }
+  var gvbmDirty = {};   // subject -> true nếu vừa đổi, chưa bấm Lưu
 
   function seatRowCol(idx){
     var cols = SEATING_DESKS_PER_ROW*2;
@@ -1972,6 +1986,56 @@
     }).catch(function(){
       msgEl.textContent = "Lỗi khi lưu, thử lại.";
       msgEl.className = "msg err";
+    });
+  });
+
+  function renderGvbmList(){
+    var el = document.getElementById("gvbmList");
+    el.innerHTML = SUBJECTS.map(function(subj){
+      var row = adminGvbm[subj] || {};
+      return '<div class="role-row" style="flex-wrap:wrap;">'+
+        '<div class="rn" style="min-width:130px;">'+esc(subj)+'</div>'+
+        '<input type="text" class="gvbm-field" data-subject="'+esc(subj)+'" data-field="teacher_name" placeholder="Tên GV" value="'+esc(row.teacher_name||"")+'" style="flex:1; min-width:160px; width:auto;">'+
+        '<input type="text" class="gvbm-field" data-subject="'+esc(subj)+'" data-field="phone" placeholder="Số điện thoại" value="'+esc(row.phone||"")+'" style="width:150px;">'+
+      '</div>';
+    }).join("");
+  }
+
+  function loadGvbm(){
+    return rpc("bcs_admin_get_gvbm", {p_admin_password: adminSession.password}).then(function(res){
+      adminGvbm = {};
+      if(res && res.ok){
+        (res.rows||[]).forEach(function(r){ adminGvbm[r.subject] = {teacher_name: r.teacher_name, phone: r.phone}; });
+      }
+      renderGvbmList();
+    }).catch(function(){});
+  }
+
+  document.getElementById("gvbmList").addEventListener("input", function(e){
+    var t = e.target;
+    if(!t.classList.contains("gvbm-field")) return;
+    var subj = t.dataset.subject, field = t.dataset.field;
+    if(!adminGvbm[subj]) adminGvbm[subj] = {};
+    adminGvbm[subj][field] = t.value;
+    gvbmDirty[subj] = true;
+    document.getElementById("gvbmMsg").textContent = "";
+  });
+
+  document.getElementById("btnSaveGvbm").addEventListener("click", function(){
+    var subjects = Object.keys(gvbmDirty);
+    var msgEl = document.getElementById("gvbmMsg");
+    if(!subjects.length){ msgEl.className = "msg"; msgEl.textContent = "Không có thay đổi nào để lưu."; return; }
+    msgEl.className = "msg"; msgEl.textContent = "Đang lưu…";
+    Promise.all(subjects.map(function(subj){
+      var row = adminGvbm[subj] || {};
+      return rpc("bcs_admin_set_gvbm", {p_admin_password: adminSession.password, p_subject: subj, p_teacher_name: row.teacher_name||null, p_phone: row.phone||null});
+    })).then(function(){
+      gvbmDirty = {};
+      msgEl.className = "msg ok";
+      msgEl.textContent = "✓ Đã lưu.";
+    }).catch(function(){
+      msgEl.className = "msg err";
+      msgEl.textContent = "Lỗi khi lưu, thử lại.";
     });
   });
 
