@@ -1797,6 +1797,11 @@
     var cols = SEATING_DESKS_PER_ROW*2;
     return { row: Math.floor(idx/cols), col: idx%cols };
   }
+  // Dãy (0-based, trái->phải): vị trí bàn cố định xuyên suốt các hàng — Dãy N ứng với Tổ N.
+  function seatDay(idx){
+    var cols = SEATING_DESKS_PER_ROW*2;
+    return Math.floor((idx%cols)/2);
+  }
   function seatNeighbors(idx){
     var cols = SEATING_DESKS_PER_ROW*2;
     var rc = seatRowCol(idx);
@@ -1820,23 +1825,6 @@
       });
     });
     return conflicts;
-  }
-
-  function findGroupConflict(seatIdx, studentName, snapshot){
-    if(!studentName) return null;
-    var g = adminStudentGroups[studentName];
-    if(!g) return null;
-    var myRow = seatRowCol(seatIdx).row;
-    var mismatched = [];
-    Object.keys(snapshot).forEach(function(idxStr){
-      var idx = Number(idxStr);
-      if(idx === seatIdx) return;
-      var n = snapshot[idx];
-      if(!n || n === studentName) return;
-      if(adminStudentGroups[n] === g && seatRowCol(idx).row !== myRow) mismatched.push(n);
-    });
-    if(!mismatched.length) return null;
-    return studentName+" (Tổ "+g+") sẽ khác dãy với bạn cùng tổ: "+mismatched.join(", ");
   }
 
   function allStudentNames(){
@@ -2031,19 +2019,29 @@
     var lines = [];
     findAvoidConflicts(toIdx, a, snapshot).forEach(function(n){ lines.push(a+" — "+n); });
     findAvoidConflicts(fromIdx, b, snapshot).forEach(function(n){ lines.push(b+" — "+n); });
-    var gc1 = findGroupConflict(toIdx, a, snapshot);
-    var gc2 = findGroupConflict(fromIdx, b, snapshot);
-    if(gc1) lines.push(gc1);
-    if(gc2) lines.push(gc2);
     if(lines.length){
       if(!confirm("⚠️ Vướng tiêu chí xếp chỗ:\n"+lines.join("\n")+"\n\nVẫn đổi chỗ?")) return;
     }
 
     if(b) adminSeatingData[fromIdx] = b; else delete adminSeatingData[fromIdx];
     if(a) adminSeatingData[toIdx] = a; else delete adminSeatingData[toIdx];
+
+    var calls = [
+      rpc("bcs_admin_set_seat", {p_admin_password: adminSession.password, p_seat_index: fromIdx, p_student_name: b}),
+      rpc("bcs_admin_set_seat", {p_admin_password: adminSession.password, p_seat_index: toIdx, p_student_name: a})
+    ];
+    // Dãy quyết định Tổ: kéo sang dãy khác thì tự cập nhật luôn Tổ theo dãy mới.
+    [{name:a, idx:toIdx}, {name:b, idx:fromIdx}].forEach(function(m){
+      if(!m.name) return;
+      var newGroup = seatDay(m.idx) + 1;
+      if(adminStudentGroups[m.name] !== newGroup){
+        adminStudentGroups[m.name] = newGroup;
+        calls.push(rpc("bcs_admin_set_student_group", {p_admin_password: adminSession.password, p_student_name: m.name, p_group_no: newGroup}));
+      }
+    });
     renderAdminSeatingGrid();
-    rpc("bcs_admin_set_seat", {p_admin_password: adminSession.password, p_seat_index: fromIdx, p_student_name: b}).catch(function(){});
-    rpc("bcs_admin_set_seat", {p_admin_password: adminSession.password, p_seat_index: toIdx, p_student_name: a}).catch(function(){});
+    renderGroupAssignList();
+    Promise.all(calls).catch(function(){});
   });
 
   // Dãy d (0-based, trái->phải) = học sinh Tổ (d+1). Mỗi dãy có SEATING_ROWS*2 chỗ (6 bàn đôi = 12 chỗ).
