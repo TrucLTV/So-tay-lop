@@ -223,9 +223,12 @@
       <div class="card">
         <h2>Gán Tổ cho học sinh</h2>
         <p class="hint">Kéo-thả học sinh sang dãy khác trong sơ đồ lớp sẽ tự cập nhật đúng Tổ theo dãy mới.</p>
-        <div id="groupAssignList"></div>
-        <button class="btn primary" id="btnSaveGroupAssign" style="width:auto; margin-top:12px;">Lưu</button>
-        <div class="msg" id="groupAssignMsg"></div>
+        <button class="btn ghost sm" id="btnToggleGroupAssign" style="width:auto; margin-bottom:12px;">▾ Hiện danh sách</button>
+        <div id="groupAssignWrap" hidden>
+          <div id="groupAssignList"></div>
+          <button class="btn primary" id="btnSaveGroupAssign" style="width:auto; margin-top:12px;">Lưu</button>
+          <div class="msg" id="groupAssignMsg"></div>
+        </div>
       </div>
     </div>
 
@@ -1937,6 +1940,12 @@
   }
 
   var groupAssignDirty = {}; // student name -> true nếu vừa đổi, chưa bấm Lưu
+
+  document.getElementById("btnToggleGroupAssign").addEventListener("click", function(){
+    var wrap = document.getElementById("groupAssignWrap");
+    wrap.hidden = !wrap.hidden;
+    this.textContent = wrap.hidden ? "▾ Hiện danh sách" : "▴ Ẩn danh sách";
+  });
 
   document.getElementById("groupAssignList").addEventListener("change", function(e){
     var sel = e.target.closest(".group-select");
