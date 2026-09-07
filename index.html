@@ -178,6 +178,12 @@
       <h2 style="font-size:1.05rem;">Quản trị (GV)</h2>
       <button class="btn ghost sm" id="btnAdminLogout">Đăng xuất</button>
     </div>
+    <div class="sub-tabs" id="adminModeTabs">
+      <button class="active" data-mode="chunhiem">Lớp chủ nhiệm</button>
+      <button data-mode="bomon">Lớp bộ môn</button>
+    </div>
+
+    <div id="adminHomeroomArea">
     <div class="sub-tabs" id="adminSubTabs">
       <button class="active" data-sub="roles">Quản lý ban cán sự</button>
       <button data-sub="summary">Tổng kết theo tuần</button>
@@ -341,6 +347,31 @@
         <p class="hint">Xoá toàn bộ Thông báo, Vi phạm, Khen thưởng, Nhận xét của GV — ở cả trang ban cán sự lẫn trang này (đưa số liệu về 0). <strong>Hồ sơ riêng từng học sinh KHÔNG bị xoá</strong>, được lưu suốt năm học.</p>
         <button class="btn danger" id="btnResetNotes" style="width:auto;">🗑 Reset toàn bộ ghi chú</button>
         <div class="msg" id="resetMsg"></div>
+      </div>
+    </div>
+    </div>
+
+    <div id="adminSubjectArea" style="display:none;">
+      <div class="card">
+        <h2>Chọn lớp bộ môn</h2>
+        <p class="hint">Chọn 1 lớp để xem/ghi nội dung riêng cho lớp đó.</p>
+        <div class="sub-tabs" id="subjectClassTabs" style="flex-wrap:wrap;">
+          <button data-class="8A9">8A9</button>
+          <button data-class="8A1">8A1</button>
+          <button data-class="7A11">7A11</button>
+          <button data-class="7A3">7A3</button>
+          <button data-class="8A4">8A4</button>
+          <button data-class="8A7">8A7</button>
+          <button data-class="7A15">7A15</button>
+          <button data-class="7A6">7A6</button>
+          <button data-class="7A18">7A18</button>
+          <button data-class="8A11">8A11</button>
+          <button data-class="8A3">8A3</button>
+        </div>
+      </div>
+      <div class="card" id="subjectClassContent" style="display:none;">
+        <h2 id="subjectClassTitle"></h2>
+        <div class="empty">Đang phát triển — nội dung cho lớp bộ môn sẽ có sau.</div>
       </div>
     </div>
   </div>
@@ -1290,6 +1321,24 @@
     if(name === "seating") loadAdminSeatingAndRender();
     if(name === "gvbm") loadGvbm();
   }
+
+  // ---- Lớp chủ nhiệm / Lớp bộ môn ----
+  document.querySelectorAll("#adminModeTabs button[data-mode]").forEach(function(btn){
+    btn.addEventListener("click", function(){ switchAdminMode(btn.dataset.mode); });
+  });
+  function switchAdminMode(mode){
+    document.querySelectorAll("#adminModeTabs button[data-mode]").forEach(function(b){ b.classList.toggle("active", b.dataset.mode===mode); });
+    document.getElementById("adminHomeroomArea").style.display = (mode==="chunhiem") ? "" : "none";
+    document.getElementById("adminSubjectArea").style.display = (mode==="bomon") ? "" : "none";
+  }
+
+  document.getElementById("subjectClassTabs").addEventListener("click", function(e){
+    var btn = e.target.closest("button[data-class]");
+    if(!btn) return;
+    document.querySelectorAll("#subjectClassTabs button[data-class]").forEach(function(b){ b.classList.toggle("active", b===btn); });
+    document.getElementById("subjectClassTitle").textContent = "Lớp " + btn.dataset.class;
+    document.getElementById("subjectClassContent").style.display = "";
+  });
 
   // ---- role scope checklist (main groups only; sub-loại nằm ở CATEGORY_GROUPS, không chọn lẻ ở đây) ----
   var rfSelectedGroups = []; // group names; [] with rfScopeAll true means 'all'
