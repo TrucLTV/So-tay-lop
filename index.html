@@ -189,6 +189,8 @@
       <div class="card">
         <div class="grp-head"><h2>🪑 Sơ đồ lớp (GV chỉnh sửa)</h2></div>
         <p class="hint">Kéo — thả 1 tên vào 1 chỗ khác để đổi chỗ. Lưu chung với sơ đồ bên trang ban cán sự (bên đó chỉ xem, không kéo thả được).</p>
+        <button class="btn ghost sm" id="btnAutoArrangeByGroup" style="width:auto; margin-bottom:12px;">🔀 Tự động xếp theo Tổ (Dãy 1=Tổ 1, Dãy 2=Tổ 2…)</button>
+        <div class="msg" id="autoArrangeMsg"></div>
         <div id="adminSeatingGrid"></div>
       </div>
       <div class="card">
@@ -2042,6 +2044,56 @@
     renderAdminSeatingGrid();
     rpc("bcs_admin_set_seat", {p_admin_password: adminSession.password, p_seat_index: fromIdx, p_student_name: b}).catch(function(){});
     rpc("bcs_admin_set_seat", {p_admin_password: adminSession.password, p_seat_index: toIdx, p_student_name: a}).catch(function(){});
+  });
+
+  // Dãy d (0-based, trái->phải) = học sinh Tổ (d+1). Mỗi dãy có SEATING_ROWS*2 chỗ (6 bàn đôi = 12 chỗ).
+  function buildSeatingByGroup(){
+    var cols = SEATING_DESKS_PER_ROW*2; // 8
+    var seatsPerDay = SEATING_ROWS*2;   // 12
+    var groups = {1:[],2:[],3:[],4:[]};
+    var unassigned = [];
+    classOrderStudentNames().forEach(function(n){
+      var g = adminStudentGroups[n];
+      if(g>=1 && g<=4) groups[g].push(n); else unassigned.push(n);
+    });
+    var newData = {};
+    for(var g=1; g<=4; g++){
+      var dayIdx = g-1;
+      var list = groups[g];
+      unassigned = unassigned.concat(list.slice(seatsPerDay)); // dư quá 12 bạn/tổ -> dồn qua chỗ trống còn lại
+      list.slice(0, seatsPerDay).forEach(function(name, slotIdx){
+        var row = Math.floor(slotIdx/2), seatOffset = slotIdx%2;
+        newData[row*cols + dayIdx*2 + seatOffset] = name;
+      });
+    }
+    var emptyIdxs = [];
+    for(var i=0; i<SEATING_TOTAL; i++){ if(!newData[i]) emptyIdxs.push(i); }
+    unassigned.forEach(function(name, i){ if(i < emptyIdxs.length) newData[emptyIdxs[i]] = name; });
+    return newData;
+  }
+
+  document.getElementById("btnAutoArrangeByGroup").addEventListener("click", function(){
+    var msgEl = document.getElementById("autoArrangeMsg");
+    var missing = classOrderStudentNames().filter(function(n){ return !(adminStudentGroups[n]>=1 && adminStudentGroups[n]<=4); });
+    var warn = missing.length ? "\n\nLưu ý: "+missing.length+" học sinh chưa được gán Tổ, sẽ xếp tạm vào chỗ còn trống." : "";
+    if(!confirm("Xếp lại TOÀN BỘ sơ đồ lớp: Dãy 1 = Tổ 1, Dãy 2 = Tổ 2, Dãy 3 = Tổ 3, Dãy 4 = Tổ 4.\nSẽ ghi đè chỗ ngồi hiện tại."+warn+"\n\nTiếp tục?")) return;
+    var newData = buildSeatingByGroup();
+    var calls = [];
+    for(var i=0; i<SEATING_TOTAL; i++){
+      var oldName = adminSeatingData[i] || null;
+      var newName = newData[i] || null;
+      if(oldName !== newName) calls.push(rpc("bcs_admin_set_seat", {p_admin_password: adminSession.password, p_seat_index: i, p_student_name: newName}));
+    }
+    msgEl.className = "msg"; msgEl.textContent = "Đang xếp lại…";
+    Promise.all(calls).then(function(){
+      adminSeatingData = newData;
+      renderAdminSeatingGrid();
+      msgEl.className = "msg ok";
+      msgEl.textContent = "✓ Đã xếp lại sơ đồ theo Tổ.";
+    }).catch(function(){
+      msgEl.className = "msg err";
+      msgEl.textContent = "Lỗi khi lưu, thử lại.";
+    });
   });
 
   document.getElementById("btnSaveSeatingNotes").addEventListener("click", function(){
