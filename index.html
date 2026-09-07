@@ -371,7 +371,7 @@
       </div>
       <div class="card" id="subjectClassContent" style="display:none;">
         <h2 id="subjectClassTitle"></h2>
-        <div class="empty">Đang phát triển — nội dung cho lớp bộ môn sẽ có sau.</div>
+        <div id="subjectClassBody"></div>
       </div>
     </div>
   </div>
@@ -1336,8 +1336,20 @@
     var btn = e.target.closest("button[data-class]");
     if(!btn) return;
     document.querySelectorAll("#subjectClassTabs button[data-class]").forEach(function(b){ b.classList.toggle("active", b===btn); });
-    document.getElementById("subjectClassTitle").textContent = "Lớp " + btn.dataset.class;
+    var cname = btn.dataset.class;
+    document.getElementById("subjectClassTitle").textContent = "Lớp " + cname;
+    document.getElementById("subjectClassBody").innerHTML = '<div class="empty">Đang tải…</div>';
     document.getElementById("subjectClassContent").style.display = "";
+    rpc("bcs_admin_get_subject_roster", {p_admin_password: adminSession.password, p_class_name: cname}).then(function(res){
+      var list = (res && res.ok) ? (res.names || []) : [];
+      document.getElementById("subjectClassBody").innerHTML =
+        '<p class="hint">Sĩ số: '+list.length+' học sinh.</p>' +
+        (list.length ? '<ol style="padding-left:22px; line-height:1.9; margin:0;">' +
+          list.map(function(n){ return '<li>'+esc(n)+'</li>'; }).join('') +
+        '</ol>' : '<div class="empty">Chưa có danh sách cho lớp này.</div>');
+    }).catch(function(){
+      document.getElementById("subjectClassBody").innerHTML = '<div class="empty">Lỗi kết nối.</div>';
+    });
   });
 
   // ---- role scope checklist (main groups only; sub-loại nằm ở CATEGORY_GROUPS, không chọn lẻ ở đây) ----
