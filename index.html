@@ -189,10 +189,7 @@
       <div class="card">
         <div class="grp-head"><h2>🪑 Sơ đồ lớp (GV chỉnh sửa)</h2></div>
         <p class="hint">Kéo — thả 1 tên vào 1 chỗ khác để đổi chỗ. Lưu chung với sơ đồ bên trang ban cán sự (bên đó chỉ xem, không kéo thả được).</p>
-        <div class="row" style="margin-bottom:12px; flex-wrap:wrap;">
-          <button class="btn ghost sm" id="btnAutoArrangeByGroup" style="width:auto;">🔀 Tự động xếp theo Tổ (Dãy 1=Tổ 1, Dãy 2=Tổ 2…)</button>
-          <button class="btn ghost sm" id="btnSwapGroups" style="width:auto;">🔁 Đổi Tổ 1↔4, 2↔3 (đổi cả tổ)</button>
-        </div>
+        <button class="btn ghost sm" id="btnAutoArrangeByGroup" style="width:auto; margin-bottom:12px;">🔀 Tự động xếp theo Tổ (Dãy 1=Tổ 1, Dãy 2=Tổ 2…)</button>
         <div class="msg" id="autoArrangeMsg"></div>
         <div id="adminSeatingGrid"></div>
       </div>
@@ -225,7 +222,7 @@
       </div>
       <div class="card">
         <h2>Gán Tổ cho học sinh</h2>
-        <p class="hint">Khi kéo-thả xếp học sinh sang dãy khác với các bạn cùng tổ, hệ thống sẽ cảnh báo.</p>
+        <p class="hint">Kéo-thả học sinh sang dãy khác trong sơ đồ lớp sẽ tự cập nhật đúng Tổ theo dãy mới.</p>
         <div id="groupAssignList"></div>
         <button class="btn primary" id="btnSaveGroupAssign" style="width:auto; margin-top:12px;">Lưu</button>
         <div class="msg" id="groupAssignMsg"></div>
@@ -533,6 +530,9 @@
   var expandedThongBaoId = null; // note id đang mở xem chi tiết báo bài (trong Học tập · Thông báo)
   var seatingOpen = false; // trang "Sơ đồ lớp"
   var SEATING_ROWS = 6, SEATING_DESKS_PER_ROW = 4, SEATING_TOTAL = SEATING_ROWS * SEATING_DESKS_PER_ROW * 2; // 6 dãy x 4 bàn đôi = 24 bàn, 48 chỗ
+  // Chỉ đổi CHỖ HIỂN THỊ trái-phải của 4 dãy (Dãy 1↔4, Dãy 2↔3) — dữ liệu học sinh/Tổ giữ nguyên,
+  // không đụng tới. Đây là thứ tự vẽ desk (0-based) từ trái sang phải trên màn hình.
+  var SEATING_DAY_DISPLAY_ORDER = [3,2,1,0];
   var seatingData = {}; // seat_index -> student_name
   var dragSeatIndex = null;
 
@@ -901,11 +901,11 @@
     for(var row=0; row<SEATING_ROWS; row++){
       var color = SEATING_TO_COLORS[row % SEATING_TO_COLORS.length];
       var desksHtml = "";
-      for(var desk=0; desk<SEATING_DESKS_PER_ROW; desk++){
+      SEATING_DAY_DISPLAY_ORDER.forEach(function(desk){
         var i1 = row*SEATING_DESKS_PER_ROW*2 + desk*2;
         var i2 = i1+1;
         desksHtml += '<div class="seating-desk" style="border-color:'+color.border+'; background:'+color.border+';">'+seatHtml(i1,color)+seatHtml(i2,color)+'</div>';
-      }
+      });
       rowsHtml += '<div class="seating-row">'+desksHtml+'</div>';
     }
     document.getElementById("groupSections").innerHTML =
@@ -1872,11 +1872,11 @@
     for(var row=0; row<SEATING_ROWS; row++){
       var color = SEATING_TO_COLORS[row % SEATING_TO_COLORS.length];
       var desksHtml = "";
-      for(var desk=0; desk<SEATING_DESKS_PER_ROW; desk++){
+      SEATING_DAY_DISPLAY_ORDER.forEach(function(desk){
         var i1 = row*SEATING_DESKS_PER_ROW*2 + desk*2;
         var i2 = i1+1;
         desksHtml += '<div class="seating-desk" style="border-color:'+color.border+'; background:'+color.border+';">'+adminSeatHtml(i1,color)+adminSeatHtml(i2,color)+'</div>';
-      }
+      });
       rowsHtml += '<div class="seating-row">'+desksHtml+'</div>';
     }
     document.getElementById("adminSeatingGrid").innerHTML =
@@ -2096,28 +2096,6 @@
     if(!confirm("Xếp lại TOÀN BỘ sơ đồ lớp: Dãy 1 = Tổ 1, Dãy 2 = Tổ 2, Dãy 3 = Tổ 3, Dãy 4 = Tổ 4.\nSẽ ghi đè chỗ ngồi hiện tại."+warn+"\n\nTiếp tục?")) return;
     msgEl.className = "msg"; msgEl.textContent = "Đang xếp lại…";
     applySeatingData(buildSeatingByGroup(), msgEl, "✓ Đã xếp lại sơ đồ theo Tổ.").catch(function(){
-      msgEl.className = "msg err";
-      msgEl.textContent = "Lỗi khi lưu, thử lại.";
-    });
-  });
-
-  document.getElementById("btnSwapGroups").addEventListener("click", function(){
-    var msgEl = document.getElementById("autoArrangeMsg");
-    if(!confirm("Đổi vị trí Tổ 1 ↔ Tổ 4, Tổ 2 ↔ Tổ 3 (đổi cả tổ), rồi xếp lại sơ đồ theo vị trí mới.\nSẽ ghi đè chỗ ngồi hiện tại.\n\nTiếp tục?")) return;
-    var swapMap = {1:4, 2:3, 3:2, 4:1};
-    var groupCalls = [];
-    classOrderStudentNames().forEach(function(n){
-      var g = adminStudentGroups[n];
-      if(swapMap[g]){
-        adminStudentGroups[n] = swapMap[g];
-        groupCalls.push(rpc("bcs_admin_set_student_group", {p_admin_password: adminSession.password, p_student_name: n, p_group_no: swapMap[g]}));
-      }
-    });
-    msgEl.className = "msg"; msgEl.textContent = "Đang đổi Tổ và xếp lại sơ đồ…";
-    Promise.all(groupCalls).then(function(){
-      renderGroupAssignList();
-      return applySeatingData(buildSeatingByGroup(), msgEl, "✓ Đã đổi Tổ 1↔4, 2↔3 và xếp lại sơ đồ.");
-    }).catch(function(){
       msgEl.className = "msg err";
       msgEl.textContent = "Lỗi khi lưu, thử lại.";
     });
