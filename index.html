@@ -189,7 +189,10 @@
       <div class="card">
         <div class="grp-head"><h2>🪑 Sơ đồ lớp (GV chỉnh sửa)</h2></div>
         <p class="hint">Kéo — thả 1 tên vào 1 chỗ khác để đổi chỗ. Lưu chung với sơ đồ bên trang ban cán sự (bên đó chỉ xem, không kéo thả được).</p>
-        <button class="btn ghost sm" id="btnAutoArrangeByGroup" style="width:auto; margin-bottom:12px;">🔀 Tự động xếp theo Tổ (Dãy 1=Tổ 1, Dãy 2=Tổ 2…)</button>
+        <div class="row" style="margin-bottom:12px; flex-wrap:wrap;">
+          <button class="btn ghost sm" id="btnAutoArrangeByGroup" style="width:auto;">🔀 Tự động xếp theo Tổ (Dãy 1=Tổ 1, Dãy 2=Tổ 2…)</button>
+          <button class="btn ghost sm" id="btnSwapGroups" style="width:auto;">🔁 Đổi Tổ 1↔4, 2↔3 (đổi cả tổ)</button>
+        </div>
         <div class="msg" id="autoArrangeMsg"></div>
         <div id="adminSeatingGrid"></div>
       </div>
@@ -2070,24 +2073,50 @@
     return newData;
   }
 
-  document.getElementById("btnAutoArrangeByGroup").addEventListener("click", function(){
-    var msgEl = document.getElementById("autoArrangeMsg");
-    var missing = classOrderStudentNames().filter(function(n){ return !(adminStudentGroups[n]>=1 && adminStudentGroups[n]<=4); });
-    var warn = missing.length ? "\n\nLưu ý: "+missing.length+" học sinh chưa được gán Tổ, sẽ xếp tạm vào chỗ còn trống." : "";
-    if(!confirm("Xếp lại TOÀN BỘ sơ đồ lớp: Dãy 1 = Tổ 1, Dãy 2 = Tổ 2, Dãy 3 = Tổ 3, Dãy 4 = Tổ 4.\nSẽ ghi đè chỗ ngồi hiện tại."+warn+"\n\nTiếp tục?")) return;
-    var newData = buildSeatingByGroup();
+  // Lưu 1 sơ đồ ghế mới (chỉ gửi những chỗ thực sự đổi), rồi cập nhật state + hiển thị.
+  function applySeatingData(newData, msgEl, okText){
     var calls = [];
     for(var i=0; i<SEATING_TOTAL; i++){
       var oldName = adminSeatingData[i] || null;
       var newName = newData[i] || null;
       if(oldName !== newName) calls.push(rpc("bcs_admin_set_seat", {p_admin_password: adminSession.password, p_seat_index: i, p_student_name: newName}));
     }
-    msgEl.className = "msg"; msgEl.textContent = "Đang xếp lại…";
-    Promise.all(calls).then(function(){
+    return Promise.all(calls).then(function(){
       adminSeatingData = newData;
       renderAdminSeatingGrid();
       msgEl.className = "msg ok";
-      msgEl.textContent = "✓ Đã xếp lại sơ đồ theo Tổ.";
+      msgEl.textContent = okText;
+    });
+  }
+
+  document.getElementById("btnAutoArrangeByGroup").addEventListener("click", function(){
+    var msgEl = document.getElementById("autoArrangeMsg");
+    var missing = classOrderStudentNames().filter(function(n){ return !(adminStudentGroups[n]>=1 && adminStudentGroups[n]<=4); });
+    var warn = missing.length ? "\n\nLưu ý: "+missing.length+" học sinh chưa được gán Tổ, sẽ xếp tạm vào chỗ còn trống." : "";
+    if(!confirm("Xếp lại TOÀN BỘ sơ đồ lớp: Dãy 1 = Tổ 1, Dãy 2 = Tổ 2, Dãy 3 = Tổ 3, Dãy 4 = Tổ 4.\nSẽ ghi đè chỗ ngồi hiện tại."+warn+"\n\nTiếp tục?")) return;
+    msgEl.className = "msg"; msgEl.textContent = "Đang xếp lại…";
+    applySeatingData(buildSeatingByGroup(), msgEl, "✓ Đã xếp lại sơ đồ theo Tổ.").catch(function(){
+      msgEl.className = "msg err";
+      msgEl.textContent = "Lỗi khi lưu, thử lại.";
+    });
+  });
+
+  document.getElementById("btnSwapGroups").addEventListener("click", function(){
+    var msgEl = document.getElementById("autoArrangeMsg");
+    if(!confirm("Đổi vị trí Tổ 1 ↔ Tổ 4, Tổ 2 ↔ Tổ 3 (đổi cả tổ), rồi xếp lại sơ đồ theo vị trí mới.\nSẽ ghi đè chỗ ngồi hiện tại.\n\nTiếp tục?")) return;
+    var swapMap = {1:4, 2:3, 3:2, 4:1};
+    var groupCalls = [];
+    classOrderStudentNames().forEach(function(n){
+      var g = adminStudentGroups[n];
+      if(swapMap[g]){
+        adminStudentGroups[n] = swapMap[g];
+        groupCalls.push(rpc("bcs_admin_set_student_group", {p_admin_password: adminSession.password, p_student_name: n, p_group_no: swapMap[g]}));
+      }
+    });
+    msgEl.className = "msg"; msgEl.textContent = "Đang đổi Tổ và xếp lại sơ đồ…";
+    Promise.all(groupCalls).then(function(){
+      renderGroupAssignList();
+      return applySeatingData(buildSeatingByGroup(), msgEl, "✓ Đã đổi Tổ 1↔4, 2↔3 và xếp lại sơ đồ.");
     }).catch(function(){
       msgEl.className = "msg err";
       msgEl.textContent = "Lỗi khi lưu, thử lại.";
