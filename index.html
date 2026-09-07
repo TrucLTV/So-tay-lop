@@ -1842,6 +1842,21 @@
     return names;
   }
 
+  // Sắp theo tên (chữ cuối cùng) trước, như danh sách lớp thường dùng — không sắp theo họ.
+  function givenName(fullName){
+    var parts = fullName.trim().split(/\s+/);
+    return parts[parts.length - 1];
+  }
+  function classOrderStudentNames(){
+    var names = DEFAULT_STUDENTS.slice();
+    Object.keys(adminSeatingData).forEach(function(idx){ var n=adminSeatingData[idx]; if(names.indexOf(n)===-1) names.push(n); });
+    names.sort(function(a,b){
+      var c = givenName(a).localeCompare(givenName(b), "vi");
+      return c !== 0 ? c : a.localeCompare(b, "vi");
+    });
+    return names;
+  }
+
   function seatingStudentOptionsHtml(){
     return allStudentNames().map(function(n){ return '<option value="'+esc(n)+'">'+esc(n)+'</option>'; }).join("");
   }
@@ -1908,7 +1923,7 @@
 
   function renderGroupAssignList(){
     var el = document.getElementById("groupAssignList");
-    el.innerHTML = allStudentNames().map(function(n){
+    el.innerHTML = classOrderStudentNames().map(function(n){
       var g = adminStudentGroups[n] || "";
       var opts = ['<option value=""'+(g===""?" selected":"")+'>Chưa gán</option>'];
       for(var i=1;i<=4;i++) opts.push('<option value="'+i+'"'+(g===i?" selected":"")+'>Tổ '+i+'</option>');
