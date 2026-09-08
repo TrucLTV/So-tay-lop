@@ -574,6 +574,9 @@
   var baoBaiDate = null;
   var expandedThongBaoId = null; // note id đang mở xem chi tiết báo bài (trong Học tập · Thông báo)
   var seatingOpen = false; // trang "Sơ đồ lớp"
+  var trucLopOpen = false; // trang "Trực lớp"
+  var trucLopDate = null;
+  var trucLopEntries = []; // toàn bộ lịch sử trực đã tải
   var SEATING_ROWS = 6, SEATING_DESKS_PER_ROW = 4, SEATING_TOTAL = SEATING_ROWS * SEATING_DESKS_PER_ROW * 2; // 6 dãy x 4 bàn đôi = 24 bàn, 48 chỗ
   // Chỉ đổi CHỖ HIỂN THỊ trái-phải của 4 dãy (Dãy 1↔4, Dãy 2↔3) — dữ liệu học sinh/Tổ giữ nguyên,
   // không đụng tới. Đây là thứ tự vẽ desk (0-based) từ trái sang phải trên màn hình.
@@ -616,6 +619,7 @@
     currentCell = null;
     baoBaiOpen = false;
     seatingOpen = false;
+    trucLopOpen = false;
     editingNoteId = null;
     loadNotesAndRender();
   }
@@ -637,6 +641,7 @@
   function renderScreen(){
     if(seatingOpen) renderSeating();
     else if(baoBaiOpen) renderBaoBai();
+    else if(trucLopOpen) renderTrucLop();
     else if(currentCell) renderCellDetail(currentCell.sectionId, currentCell.kindId);
     else renderMatrix();
   }
@@ -743,7 +748,8 @@
   function renderMatrix(){
     var headHtml = '<tr><th></th>' + SECTIONS.map(function(sec){
       var extra = sec.name === "Học tập" ? '<br><button class="btn ghost sm" data-action="open-baobai" style="margin-top:4px;">📖 Viết báo bài</button>'+
-        ' <button class="btn ghost sm" data-action="open-seating" style="margin-top:4px;">🪑 Sơ đồ lớp</button>' : '';
+        ' <button class="btn ghost sm" data-action="open-seating" style="margin-top:4px;">🪑 Sơ đồ lớp</button>'+
+        ' <button class="btn ghost sm" data-action="open-truclop" style="margin-top:4px;">🧹 Trực lớp</button>' : '';
       return '<th>'+esc(sec.name)+extra+'</th>';
     }).join("") + '</tr>';
     var bodyHtml = ROW_KINDS.map(function(row){
@@ -963,6 +969,65 @@
       '</div>';
   }
 
+  // ---- Trực lớp: chọn ngày, gán 2 người trực + nhận xét Đạt/Chưa đạt + ghi chú ----
+  function loadTrucLopAndRender(){
+    document.getElementById("groupSections").innerHTML = '<div class="empty">Đang tải…</div>';
+    rpc("bcs_list_class_duty", {p_password: session.pw}).then(function(res){
+      trucLopEntries = (res && res.ok) ? (res.rows || []) : [];
+      renderTrucLop();
+    }).catch(function(){
+      document.getElementById("groupSections").innerHTML = '<button class="btn ghost sm" data-action="back-matrix">← Quay lại bảng tổng hợp</button><div class="empty">Lỗi kết nối.</div>';
+    });
+  }
+
+  function trucLopEntryFor(dateStr){
+    return trucLopEntries.find(function(e){ return e.duty_date === dateStr; }) || {};
+  }
+
+  function trucLopStudentOptionsHtml(selected){
+    var opts = ['<option value="">— Chọn học sinh —</option>'];
+    DEFAULT_STUDENTS.forEach(function(n){ opts.push('<option value="'+esc(n)+'"'+(n===selected?" selected":"")+'>'+esc(n)+'</option>'); });
+    return opts.join("");
+  }
+
+  function trucLopHistoryRowsHtml(){
+    if(!trucLopEntries.length) return '<tr><td colspan="5" class="empty">Chưa có lịch trực nào.</td></tr>';
+    return trucLopEntries.map(function(e){
+      return '<tr>' +
+        '<td style="white-space:nowrap;">'+esc(fmtOccurDate(e.duty_date))+'</td>' +
+        '<td>'+(e.student1?esc(e.student1):'<span class="faint">—</span>')+'</td>' +
+        '<td>'+(e.student2?esc(e.student2):'<span class="faint">—</span>')+'</td>' +
+        '<td style="white-space:nowrap;">'+(e.rating==="dat"?'✅ Đạt':(e.rating==="chua_dat"?'❌ Chưa đạt':'<span class="faint">—</span>'))+'</td>' +
+        '<td>'+(e.note?esc(e.note):'<span class="faint">—</span>')+'</td>' +
+        '</tr>';
+    }).join("");
+  }
+
+  function renderTrucLop(){
+    if(!trucLopDate) trucLopDate = toDateInputVal(new Date());
+    var entry = trucLopEntryFor(trucLopDate);
+
+    var formHtml =
+      '<label>Người trực 1</label><div class="field" style="margin-bottom:8px;"><select id="tlStudent1">'+trucLopStudentOptionsHtml(entry.student1)+'</select></div>' +
+      '<label>Người trực 2</label><div class="field" style="margin-bottom:8px;"><select id="tlStudent2">'+trucLopStudentOptionsHtml(entry.student2)+'</select></div>' +
+      '<label style="display:flex; align-items:center; gap:6px; margin-bottom:8px; cursor:pointer;">' +
+        '<input type="checkbox" id="tlRating" style="width:auto;"'+(entry.rating==="dat"?" checked":"")+'><span>Đạt</span>' +
+      '</label>' +
+      '<label>Ghi chú</label><div class="field" style="margin-bottom:8px;"><textarea id="tlNote" placeholder="Ghi chú (nếu có)…">'+esc(entry.note||"")+'</textarea></div>' +
+      '<button class="btn primary" data-action="save-truclop">Lưu</button>' +
+      (entry.id ? ' <button class="btn ghost sm danger" data-action="delete-truclop">Xoá ngày này</button>' : '') +
+      '<div class="msg" id="tlMsg"></div>';
+
+    document.getElementById("groupSections").innerHTML =
+      '<button class="btn ghost sm" data-action="back-matrix" style="margin-bottom:12px;">← Quay lại bảng tổng hợp</button>' +
+      '<div class="grp-card">' +
+      '<div class="grp-head"><h2>🧹 Trực lớp</h2></div>' +
+      '<label>Ngày</label><div class="field" style="margin-bottom:8px;"><input type="date" id="tlDate" value="'+trucLopDate+'"></div>' +
+      formHtml +
+      '</div>' +
+      '<div class="table-wrap"><table><thead><tr><th>Ngày</th><th>Người trực 1</th><th>Người trực 2</th><th>Nhận xét</th><th>Ghi chú</th></tr></thead><tbody>'+trucLopHistoryRowsHtml()+'</tbody></table></div>';
+  }
+
   document.getElementById("groupSections").addEventListener("dragstart", function(e){
     var seat = e.target.closest(".seat[data-seat]");
     if(!seat) return;
@@ -1000,6 +1065,7 @@
   document.getElementById("groupSections").addEventListener("change", function(e){
     var t = e.target;
     if(t.id === "bbDate"){ baoBaiDate = t.value || toDateInputVal(new Date()); renderScreen(); return; }
+    if(t.id === "tlDate"){ trucLopDate = t.value || toDateInputVal(new Date()); renderScreen(); return; }
     if(t.id === "filterDate"){ filterState.date = t.value || null; renderScreen(); return; }
     if(t.id === "filterSubject"){ filterState.subject = t.value || null; renderScreen(); return; }
     if(t.id === "filterPeriod"){ filterState.period = t.value ? Number(t.value) : null; renderScreen(); return; }
@@ -1032,6 +1098,7 @@
     if(e.target.closest("[data-action='open-baobai']")){
       baoBaiOpen = true;
       seatingOpen = false;
+      trucLopOpen = false;
       currentCell = null;
       editingNoteId = null;
       expandedThongBaoId = null;
@@ -1042,14 +1109,24 @@
     if(e.target.closest("[data-action='open-seating']")){
       seatingOpen = true;
       baoBaiOpen = false;
+      trucLopOpen = false;
       currentCell = null;
       loadSeatingAndRender();
+      return;
+    }
+    if(e.target.closest("[data-action='open-truclop']")){
+      trucLopOpen = true;
+      seatingOpen = false;
+      baoBaiOpen = false;
+      currentCell = null;
+      loadTrucLopAndRender();
       return;
     }
     if(e.target.closest("[data-action='back-matrix']")){
       currentCell = null;
       baoBaiOpen = false;
       seatingOpen = false;
+      trucLopOpen = false;
       editingNoteId = null;
       expandedThongBaoId = null;
       renderScreen();
@@ -1136,6 +1213,35 @@
           msgBB.className="msg err"; msgBB.textContent="Không gửi được — thử đăng xuất rồi vào lại.";
         }
       }).catch(function(){ btn.disabled=false; msgBB.className="msg err"; msgBB.textContent="Lỗi kết nối — thử lại."; });
+      return;
+    }
+
+    if(action === "save-truclop"){
+      var msgTL = document.getElementById("tlMsg");
+      var s1 = document.getElementById("tlStudent1").value;
+      var s2 = document.getElementById("tlStudent2").value;
+      var rated = document.getElementById("tlRating").checked;
+      var noteTL = document.getElementById("tlNote").value.trim();
+      btn.disabled = true;
+      msgTL.className = "msg"; msgTL.textContent = "Đang lưu…";
+      rpc("bcs_set_class_duty", {p_password: session.pw, p_date: trucLopDate, p_student1: s1, p_student2: s2, p_rating: rated?"dat":null, p_note: noteTL}).then(function(res){
+        btn.disabled = false;
+        if(res && res.ok) loadTrucLopAndRender();
+        else { msgTL.className = "msg err"; msgTL.textContent = "Không lưu được — thử lại."; }
+      }).catch(function(){ btn.disabled = false; msgTL.className = "msg err"; msgTL.textContent = "Lỗi kết nối — thử lại."; });
+      return;
+    }
+
+    if(action === "delete-truclop"){
+      if(!confirm("Xoá lịch trực ngày "+fmtOccurDate(trucLopDate)+"?")) return;
+      var msgTLd = document.getElementById("tlMsg");
+      btn.disabled = true;
+      msgTLd.className = "msg"; msgTLd.textContent = "Đang xoá…";
+      rpc("bcs_delete_class_duty", {p_password: session.pw, p_date: trucLopDate}).then(function(res){
+        btn.disabled = false;
+        if(res && res.ok) loadTrucLopAndRender();
+        else { msgTLd.className = "msg err"; msgTLd.textContent = "Không xoá được — thử lại."; }
+      }).catch(function(){ btn.disabled = false; msgTLd.className = "msg err"; msgTLd.textContent = "Lỗi kết nối — thử lại."; });
       return;
     }
 
@@ -1261,6 +1367,7 @@
     currentCell = null;
     baoBaiOpen = false;
     seatingOpen = false;
+    trucLopOpen = false;
     showScreen("screenLogin");
   });
 

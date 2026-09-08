@@ -11,6 +11,9 @@ create table if not exists bcs_subject_class_roster (
   created_at timestamptz not null default now(),
   unique (class_name, seq)
 );
+alter table bcs_subject_class_roster enable row level security;
+-- Không tạo policy nào — bảng chỉ truy cập được qua RPC security definer bên dưới,
+-- giống mọi bảng bcs_* khác trong dự án này.
 
 create or replace function bcs_admin_get_subject_roster(p_admin_password text, p_class_name text)
 returns jsonb
