@@ -744,12 +744,18 @@
       '</div>';
   }
 
+  // Mỗi mục (cột) có 1 nút chức năng riêng, hiện ngay dưới tên cột.
+  var SECTION_EXTRA_BUTTON = {
+    "Học tập": '<button class="btn ghost sm" data-action="open-baobai" style="margin-top:4px;">📖 Viết báo bài</button>',
+    "Kỷ luật": '<button class="btn ghost sm" data-action="open-seating" style="margin-top:4px;">🪑 Sơ đồ lớp</button>',
+    "Phong trào": '<button class="btn ghost sm" data-action="open-truclop" style="margin-top:4px;">🧹 Trực lớp</button>'
+  };
+
   // ---- trang tổng thể: bảng ma trận 4 mục x 4 loại nội dung ----
   function renderMatrix(){
     var headHtml = '<tr><th></th>' + SECTIONS.map(function(sec){
-      var extra = sec.name === "Học tập" ? '<br><button class="btn ghost sm" data-action="open-baobai" style="margin-top:4px;">📖 Viết báo bài</button>'+
-        ' <button class="btn ghost sm" data-action="open-seating" style="margin-top:4px;">🪑 Sơ đồ lớp</button>'+
-        ' <button class="btn ghost sm" data-action="open-truclop" style="margin-top:4px;">🧹 Trực lớp</button>' : '';
+      var btnHtml = SECTION_EXTRA_BUTTON[sec.name];
+      var extra = btnHtml ? '<br>'+btnHtml : '';
       return '<th>'+esc(sec.name)+extra+'</th>';
     }).join("") + '</tr>';
     var bodyHtml = ROW_KINDS.map(function(row){
